@@ -5,15 +5,22 @@
 #include <concepts>
 #include <type_traits>
 
-// TODO : version
-// TODO : to config
-#define CUW3_CACHELINE 64
-#define CUW3_GENERIC_CONTROL_BLOCK_SIZE 128
+// configured
+#include <cuw3/config.hpp>
+
+// TODO : config
+#define CUW3_VERSION_MAJOR 0
+#define CUW3_VERSION_MINOR 0
+
+#define CUW3_CACHELINE_SIZE 64
+#define CUW3_CONTROL_BLOCK_SIZE 128
+#define CUW3_PAGE_SIZE 4096
+#define CUW3_HUGEPAGE_SIZE (1 << 21)
 
 // TODO : platform defines
 // TODO : build configuration defines
-// TODO : basic page size
-// TODO : basic huge page size
+
+// TODO : enforce some checks on definitions
 
 namespace cuw3 {
     using uint = unsigned;
@@ -45,6 +52,6 @@ namespace cuw3 {
     template<class T>
     concept IntptrLike = std::is_same_v<T, intptr> || std::is_same_v<T, uintptr> || sizeof(T) >= sizeof(uintptr);
 
-    inline constexpr uint64 cacheline = CUW3_CACHELINE;
-    inline constexpr uint64 generic_control_block_size = CUW3_GENERIC_CONTROL_BLOCK_SIZE;
+    inline constexpr uint64 cacheline = CUW3_CACHELINE_SIZE;
+    inline constexpr uint64 control_block_size = CUW3_CONTROL_BLOCK_SIZE;
 }
