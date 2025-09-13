@@ -5,9 +5,6 @@
 * clang selection (cross)
 
 * definitions via options
-
-* hugetlbfs
-
 * benchmarking (maybe)
 
 *** implementation ***

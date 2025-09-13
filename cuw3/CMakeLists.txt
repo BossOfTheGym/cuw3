@@ -33,7 +33,7 @@ endif()
 
 configure_file(config.hpp.in include/cuw3/config.hpp @ONLY)
 
-add_library(cuw3 ${CUW3_LIB_TYPE} ${CUW3_LIB_SOURCES})
+add_library(cuw3 ${CUW3_LIB_TYPE} ${CUW3_LIB_SOURCES} ${CUW3_LIB_HEADERS} ${CMAKE_CURRENT_BINARY_DIR}/include/cuw3/config.hpp)
 
 # TODO : (learn about) target_sources and FILE_SET to install headers
 target_include_directories(cuw3
