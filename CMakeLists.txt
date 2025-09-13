@@ -50,6 +50,15 @@ set(CUW3_INSTALL_DOCDIR ${CMAKE_INSTALL_DOCDIR})
 set(CUW3_INSTALL_INCLUDEDIR ${CMAKE_INSTALL_INCLUDEDIR})
 set(CUW3_INSTALL_CONFIGDIR ${CMAKE_INSTALL_LIBDIR}/cmake/cuw3)
 
+function(add_executable_ext target)
+    add_executable(${target} ${ARGN})
+    add_custom_command(
+        TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:${target}> $<TARGET_RUNTIME_DLLS:${target}>
+        COMMAND_EXPAND_LISTS
+    )
+endfunction()
+
 add_subdirectory(cuw3)
 if(CUW3_BUILD_TESTS)
     add_subdirectory(tests)
