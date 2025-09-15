@@ -5,7 +5,7 @@ option(CUW3_BUILD_EXAMPLES "build examples" ON)
 option(CUW3_BUILD_BENCHMARKS "build benchmarks" ON)
 option(CUW3_BUILD_SHARED "build as shared library" ON)
 
-set(CUW3_BUILD_CONFIG $<CONFIG>)
+set(CUW3_BUILD_CONFIG $<CONFIG>) # TODO : check
 
 set(CUW3_VERSION_MAJOR 0)
 set(CUW3_VERSION_MINOR 0)

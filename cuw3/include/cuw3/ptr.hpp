@@ -5,6 +5,25 @@
 #include "assert.hpp"
 
 namespace cuw3 {
+    inline void* advance_ptr(void* ptr, ptrdiff diff) {
+        CUW3_ASSERT(ptr, "ptr must not be zero.");
+        return (char*)ptr + diff;
+    }
+
+    template<class To, class From>
+    To* transform_ptr(From* from, ptrdiff diff) {
+        CUW3_ASSERT(from, "from pointer must not be zero.");
+        return (To*)advance_ptr(from, diff);
+    }
+
+    template<class Object, class Field>
+    Object* field_to_obj(Field* field, ptrdiff offset) {
+        CUW3_ASSERT(field, "field must not be zero.");
+        return (Object*)advance_ptr(field, -offset);
+    }
+
+    #define cuw3_field_to_obj(field_ptr, Object, field_name) field_to_obj<Object>((field_ptr), (ptrdiff)offsetof(Object, field_name))
+
     template<Integer T, T bits>
     struct AlignmentPackedInt {
         static_assert(bits > 0 && bits < bitsize<T>());

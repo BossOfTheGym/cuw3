@@ -3,8 +3,10 @@
 * definitions via options
 * benchmarking (maybe)
 
+* test vmem on windows
+* test vmem on linux
+
 *** implementation ***
-* vmem
+* vmem (linux)
 * atomic
-* backoff
 * retire_reclaim

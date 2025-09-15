@@ -1,5 +1,30 @@
 #pragma once
 
+#include <immintrin.h>
+
 namespace cuw3 {
-    // TODO : move all of the backoffs here
+    inline void stall_execution() {
+        _mm_pause();
+    }
+
+    template<int spins>
+    struct ConstantBackoff {
+        void operator() () {
+            for (int i = 0; i < spins; i++) {
+                stall_execution();
+            }
+        }
+    };
+
+    template<int a, int b, int max_spins>
+    struct ExpBackoff {
+        void operator() () {
+            for (int i = 0; i < spins; i++) {
+                stall_execution();
+            }
+            spins = std::min(a * spins + b, max_spins);
+        }
+
+        int spins{};
+    };
 }

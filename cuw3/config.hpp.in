@@ -1,5 +1,7 @@
 #pragma once
 
+// auto-generated, you better not modify
+
 #define CUW3_VERSION_MAJOR @CUW3_VERSION_MAJOR@ 
 #define CUW3_VERSION_MINOR @CUW3_VERSION_MINOR@ 
 #define CUW3_VERSION "@CUW3_VERSION@"

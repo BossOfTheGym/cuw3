@@ -69,14 +69,14 @@ namespace cuw3 {
         return !(value & (alignment - 1));
     }
 
-    template<Integer T, Integer U>
+    template<class T, Integer U>
     constexpr bool is_aligned(T* ptr, U alignment) {
         CUW3_ASSERT(is_alignment(alignment), "not_alignment");
         return is_aligned((uintptr)ptr, alignment);
     }
 
-    template<Integer T, Integer U>
-    constexpr bool is_aligned(U* ptr) {
+    template<class T, class U>
+    constexpr bool is_type_aligned(U* ptr) {
         return is_aligned(ptr, alignof(T));
     }
 

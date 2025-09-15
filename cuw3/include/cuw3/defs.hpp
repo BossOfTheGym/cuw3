@@ -8,10 +8,6 @@
 // configured
 #include <cuw3/config.hpp>
 
-// TODO : config
-#define CUW3_VERSION_MAJOR 0
-#define CUW3_VERSION_MINOR 0
-
 #define CUW3_CACHELINE_SIZE 64
 #define CUW3_CONTROL_BLOCK_SIZE 128
 #define CUW3_PAGE_SIZE 4096
@@ -39,6 +35,10 @@ namespace cuw3 {
     using uintptr = uintptr_t;
 
     using ptrdiff = ptrdiff_t;
+
+    using gsize = size_t;
+    using usize = std::make_unsigned_t<gsize>;
+    using ssize = std::make_signed_t<gsize>;
 
     template<class T>
     concept SignedInteger = std::signed_integral<T>;
