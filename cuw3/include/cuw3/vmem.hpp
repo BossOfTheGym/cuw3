@@ -10,7 +10,9 @@
 namespace cuw3 {
     enum VMemAllocType : uintptr {
         VMemReserve = 1,
-        VMemReserveCommit = 2,
+        VMemCommit = 2,
+        VMemReserveCommit = VMemReserve | VMemCommit,
+        VMemHugepages = 4,
     };
 
     // TODO

@@ -86,6 +86,12 @@ namespace cuw3 {
         return (value + alignment - 1) & -alignment;
     }
 
+    template<class T, Integer U>
+    constexpr auto align(T* value, U alignment) {
+        CUW3_ASSERT(is_alignment(alignment), "not alignment");
+        return (T*)align((uintptr)value, alignment);
+    }
+
     template<Integer T>
     constexpr T bitsize() {
         return sizeof(T) * (T)8;
@@ -106,4 +112,30 @@ namespace cuw3 {
         }
         return a / b;
     }
+
+    inline ptrdiff subptr(const void* a, const void* b) {
+        return (const char*)a - (const char*)b;
+    }
+
+    template<VoidLike T>
+    inline T* advance_ptr(T* ptr, ptrdiff diff) {
+        using Char = std::conditional_t<std::is_const_v<T>, const char, char>;
+        
+        CUW3_ASSERT(ptr, "ptr must not be zero.");
+        return (T*)((Char*)ptr + diff);
+    }
+
+    template<class To, class From>
+    To* transform_ptr(From* from, ptrdiff diff) {
+        CUW3_ASSERT(from, "from pointer must not be zero.");
+        return (To*)advance_ptr(from, diff);
+    }
+
+    template<class Object, class Field>
+    Object* field_to_obj(Field* field, ptrdiff offset) {
+        CUW3_ASSERT(field, "field must not be zero.");
+        return (Object*)advance_ptr(field, -offset);
+    }
+
+    #define cuw3_field_to_obj(field_ptr, Object, field_name) field_to_obj<Object>((field_ptr), (ptrdiff)offsetof(Object, field_name))
 }

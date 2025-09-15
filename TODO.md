@@ -10,3 +10,9 @@
 * vmem (linux)
 * atomic
 * retire_reclaim
+
+* non-intrusive stream file reader utility
+
+*** check ***
+
+*** ??? ***

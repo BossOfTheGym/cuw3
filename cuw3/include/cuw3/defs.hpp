@@ -52,6 +52,9 @@ namespace cuw3 {
     template<class T>
     concept IntptrLike = std::is_same_v<T, intptr> || std::is_same_v<T, uintptr> || sizeof(T) >= sizeof(uintptr);
 
+    template<class T>
+    concept VoidLike = std::is_void_v<T>;
+
     inline constexpr uint64 cacheline = CUW3_CACHELINE_SIZE;
     inline constexpr uint64 control_block_size = CUW3_CONTROL_BLOCK_SIZE;
 }
