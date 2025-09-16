@@ -18,6 +18,24 @@
 
 // TODO : enforce some checks on definitions
 
+// TODO : page size
+// TODO : page bits
+// TODO : page granularity
+// TODO : page granularity bits
+// TODO : huge page size
+// TODO : huge page size bits
+
+// TODO : memory reserve amount
+// TODO : count of region size classes
+// TODO : contention split for region allocator (count of lists)
+
+// TODO : bit width of the head field (handle list field as well)
+// TODO : bit width of the version field 
+
+// TODO : minimum allocation alignment
+// TODO : minimum allocation alignment bits
+
+
 namespace cuw3 {
     using uint = unsigned;
 
@@ -56,5 +74,5 @@ namespace cuw3 {
     concept VoidLike = std::is_void_v<T>;
 
     inline constexpr uint64 cacheline = CUW3_CACHELINE_SIZE;
-    inline constexpr uint64 control_block_size = CUW3_CONTROL_BLOCK_SIZE;
+    inline constexpr uint64 config_control_block_size = CUW3_CONTROL_BLOCK_SIZE;
 }

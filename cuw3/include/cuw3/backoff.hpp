@@ -2,10 +2,18 @@
 
 #include <immintrin.h>
 
+#include <algorithm>
+
 namespace cuw3 {
     inline void stall_execution() {
         _mm_pause();
     }
+
+    struct SimpleBackoff {
+        void operator() () {
+            stall_execution();
+        }
+    };
 
     template<int spins>
     struct ConstantBackoff {

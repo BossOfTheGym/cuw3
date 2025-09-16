@@ -21,18 +21,22 @@ namespace cuw3 {
         void pack(T value, T alignment) {
             CUW3_ASSERT(!(value & ~value_mask), "bad value: garbage in alignment bits");
             CUW3_ASSERT(!(alignment & ~alignment_mask), "bad alignment: garbage in value bits");
-            data = value | alignment;
+            _data = value | alignment;
         }
 
         T value() const noexcept {
-            return data & value_mask;
+            return _data & value_mask;
         }
 
         T alignment() const noexcept {
-            return data & alignment_mask;
+            return _data & alignment_mask;
         }
 
-        T data{};
+        T raw() const {
+            return _data;
+        }
+
+        T _data{};
     };
 
     template<IntptrLike T, T bits>
@@ -47,9 +51,13 @@ namespace cuw3 {
             Base::pack((T)ptr, alignment);
         }
 
-        template<class Type>
+        template<class Type = void>
         Type* ptr() const noexcept {
             return (Type*)Base::value();
+        }
+
+        T data() const {
+            return Base::alignment();
         }
     };
 

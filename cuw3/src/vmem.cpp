@@ -142,7 +142,7 @@ namespace cuw3 {
         if (head_size > 0) {
             vmem_free(raw_mem, head_size);
         }
-        vmem_free(advance_ptr(aligned_mem, aligned_size), aligned_size - head_size);
+        vmem_free(advance_ptr(aligned_mem, aligned_size), aligned_size - head_size);// tail
 
         if (alloc_type == VMemReserveCommit) {
             vmem_commit(aligned_mem, aligned_size);

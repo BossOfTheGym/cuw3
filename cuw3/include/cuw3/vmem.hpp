@@ -4,7 +4,7 @@
 #include "export.hpp"
 
 // this is rather limited abstraction of the virtual memory system
-// memory protection is always read-write
+// memory access rights are always read-write
 // memory can be reserved or reserved and committed only
 // memory can be committed/decommitted later
 namespace cuw3 {
@@ -15,7 +15,7 @@ namespace cuw3 {
         VMemHugepages = 4,
     };
 
-    // TODO
+    // TODO : or just leave it as uint64
     using ErrorCode = uint64;
 
     CUW3_API usize vmem_page_size();
