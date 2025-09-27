@@ -9,6 +9,7 @@ namespace cuw3 {
     struct AlignmentPackedInt {
         static_assert(bits > 0 && bits < bitsize<T>());
 
+        static constexpr T alignment_bits = bits;
         static constexpr T alignment_mask = ((T)1 << bits) - 1;
         static constexpr T value_mask = ~alignment_mask;
 
@@ -17,15 +18,27 @@ namespace cuw3 {
             result.pack(value, alignment);
             return result;
         }
-        
+       
+        static AlignmentPackedInt packed_shifted(T value, T alignment) {
+            return packed(value << alignment_bits, alignment);
+        }
+
         void pack(T value, T alignment) {
             CUW3_ASSERT(!(value & ~value_mask), "bad value: garbage in alignment bits");
             CUW3_ASSERT(!(alignment & ~alignment_mask), "bad alignment: garbage in value bits");
             _data = value | alignment;
         }
 
+        void pack_shifted(T value, T alignment) {
+            pack(value << alignment_bits, alignment);
+        }
+
         T value() const noexcept {
             return _data & value_mask;
+        }
+
+        T value_shifted() const noexcept {
+            return _data >> alignment_bits;
         }
 
         T alignment() const noexcept {
@@ -43,12 +56,20 @@ namespace cuw3 {
     struct AlignmentPackedPtr : AlignmentPackedInt<T, bits> {
         using Base = AlignmentPackedInt<T, bits>;
 
-        static AlignmentPackedPtr packed(void* ptr, T alignment) {
-            return {Base::packed((T)ptr, alignment)};
+        static AlignmentPackedPtr packed(void* ptr, T value) {
+            return {Base::packed((T)ptr, value)};
         }
 
-        void pack(void* ptr, T alignment) noexcept {
-            Base::pack((T)ptr, alignment);
+        static AlignmentPackedPtr packed(T value, T alignment) {
+            return {Base::packed(value, alignment)};
+        }
+       
+        static AlignmentPackedPtr packed_shifted(T value, T alignment) {
+            return {Base::packed_shifted(value, alignment)};
+        }
+
+        void pack(void* ptr, T value) noexcept {
+            Base::pack((T)ptr, value);
         }
 
         template<class Type = void>

@@ -1,5 +1,4 @@
 *** build ***
-* clang selection (cross)
 * definitions via options
 * benchmarking (maybe)
 
@@ -8,21 +7,19 @@
 * test vmem on linux
 * test retire_reclaim scheme
 * test atomic list
+* test region allocator
 
 *** implementation ***
-* region allocator
-
 * allocator foundation
+* thread-local allocator foundation 
 
 * pool allocator
-* arena allocator
 * fast-arena allocator
-
-* thread-local allocator foundation 
 
 * non-intrusive stream file reader utility
 
 *** check ***
+* check alocation consistency
 
 *** ??? ***
 * error code return type in vmem

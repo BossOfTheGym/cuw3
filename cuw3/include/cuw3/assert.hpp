@@ -10,5 +10,6 @@
         CUW3_ABORT(fmt __VA_OPT__(,) __VA_ARGS__);\
     }\
 } while(0)
+#define CUW3_ALERT(fmt, ...)
 
 namespace cuw3 {}

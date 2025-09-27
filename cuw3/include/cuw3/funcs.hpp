@@ -1,6 +1,9 @@
 #pragma once
 
 #include <bit>
+#include <array>
+#include <algorithm>
+#include <functional>
 #include <type_traits>
 
 #include "defs.hpp"
@@ -55,7 +58,7 @@ namespace cuw3 {
 
     template<Integer T, Integer U>
     constexpr auto modpow2(T a, U b_log2) {
-        return a & (((U)1 << b_log2) - 1);
+        return a & ~(~(U)0 >> b_log2);
     }
 
     template<Integer T>
@@ -97,6 +100,7 @@ namespace cuw3 {
         return sizeof(T) * (T)8;
     }
 
+
     template<Integer T, Integer U>
     constexpr auto mulchunk(T a, U b, U b_log2 = (U)0) -> decltype(a * b) {
         if (b_log2) {
@@ -113,17 +117,34 @@ namespace cuw3 {
         return a / b;
     }
 
+
     inline ptrdiff subptr(const void* a, const void* b) {
         return (const char*)a - (const char*)b;
     }
 
     template<VoidLike T>
     inline T* advance_ptr(T* ptr, ptrdiff diff) {
-        using Char = std::conditional_t<std::is_const_v<T>, const char, char>;
+        using Char = SameConstAs<T, char>;
         
         CUW3_ASSERT(ptr, "ptr must not be zero.");
-        return (T*)((Char*)ptr + diff);
+        return (Char*)ptr + diff;
     }
+
+    template<VoidLike T>
+    inline T* advance_arr(T* ptr, intptr elem_size, intptr elem_index) {
+        using Char = SameConstAs<T, char>;
+
+        CUW3_ASSERT(ptr, "ptr must not be zero");
+        return (Char*)ptr + elem_index * elem_size;
+    }
+
+    template<VoidLike T>
+    inline T* advance_arr_log2(T* ptr, intptr elem_size_log2, intptr elem_index) {
+        using Char = SameConstAs<T, char>;
+
+        CUW3_ASSERT(ptr, "ptr must not be zero");
+        return (Char*)ptr + mulpow2(elem_index, elem_size_log2);
+    } 
 
     template<class To, class From>
     To* transform_ptr(From* from, ptrdiff diff) {
@@ -138,4 +159,35 @@ namespace cuw3 {
     }
 
     #define cuw3_field_to_obj(field_ptr, Object, field_name) field_to_obj<Object>((field_ptr), (ptrdiff)offsetof(Object, field_name))
+
+
+    template<class T, usize Size>
+    constexpr usize array_size(const T (&array)[Size]) {
+        return Size;
+    }
+
+    template<Integer T, usize Size>
+    constexpr bool array_unique_ascending(const T (&array)[Size]) {
+        for (usize i = 1; i < Size; i++) {
+            if (array[i - 1] >= array[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    template<Integer T, usize Size>
+    constexpr bool all_sizes_valid(const T (&array)[Size]) {
+        return std::all_of(std::begin(array), std::end(array), [] (auto& size) { return size <= 40; });
+    }
+
+    template<class It>
+    constexpr bool all_equal(It first, It last) {
+        return std::adjacent_find(first, last, std::not_equal_to{}) == last;
+    }
+    
+    template<Integer T, usize Size>
+    constexpr bool all_equal(const T (&array)[Size]) {
+        return std::adjacent_find(std::begin(array), std::end(array), std::not_equal_to{}) == std::end(array);
+    }
 }

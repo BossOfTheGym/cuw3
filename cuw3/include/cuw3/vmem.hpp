@@ -12,7 +12,7 @@ namespace cuw3 {
         VMemReserve = 1,
         VMemCommit = 2,
         VMemReserveCommit = VMemReserve | VMemCommit,
-        VMemHugepages = 4,
+        VMemHugepages = 4, // for now ignored and unused
     };
 
     // TODO : or just leave it as uint64
@@ -23,9 +23,9 @@ namespace cuw3 {
     CUW3_API usize vmem_alloc_granularity();
 
     CUW3_API void* vmem_alloc(usize size, VMemAllocType alloc_type);
-    CUW3_API void* vmem_alloc_aligned(usize size, VMemAllocType alloc_type, usize desired_alignment);
+    CUW3_API void* vmem_alloc_aligned(usize size, VMemAllocType alloc_type, usize address_alignment);
     CUW3_API bool vmem_free(void* mem, usize size);
-
+    
     CUW3_API bool vmem_commit(void* mem, usize size);
     CUW3_API bool vmem_decommit(void* mem, usize size);
 

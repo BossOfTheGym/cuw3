@@ -41,10 +41,10 @@ namespace cuw3 {
         return VirtualAlloc(nullptr, size, alloc_flags, protection_flags);
     }
 
-    CUW3_API void* vmem_alloc_aligned(usize size, VMemAllocType alloc_type, usize desired_alignment) {
+    CUW3_API void* vmem_alloc_aligned(usize size, VMemAllocType alloc_type, usize address_alignment) {
         SYSTEM_INFO si{};
         GetSystemInfo(&si);
-        usize alignment = std::max<usize>({si.dwPageSize, si.dwAllocationGranularity, desired_alignment});
+        usize alignment = std::max<usize>({si.dwPageSize, si.dwAllocationGranularity, address_alignment});
 
         DWORD alloc_flags = MEM_RESERVE | (alloc_type & VMemReserveCommit ? MEM_COMMIT : 0);
         DWORD protection_flags = PAGE_READWRITE;
@@ -121,31 +121,34 @@ namespace cuw3 {
         return mem != MAP_FAILED ? mem : nullptr;
     }
 
-    CUW3_API void* vmem_alloc_aligned(usize size, VMemAllocType alloc_type, usize desired_alignment) {
+    CUW3_API void* vmem_alloc_aligned(usize size, VMemAllocType alloc_type, usize address_alignment) {
         usize page_size = vmem_page_size();
-        usize alignment = std::max(page_size, desired_alignment);
-        usize aligned_size = align(size, alignment);
-
-        if (alignment == page_size) {
+        address_alignment = std::max(page_size, address_alignment);
+        if (address_alignment == page_size) {
             return vmem_alloc(size, alloc_type);
         }
-
-        void* raw_mem = vmem_alloc(aligned_size * 2, VMemReserve);
+        
+        usize address_aligned_size = align(size, address_alignment);
+        void* raw_mem = vmem_alloc(address_aligned_size + address_alignment, VMemReserve);
         if (!raw_mem) {
-            return raw_mem;
+            return nullptr;
         }
-
-        void* aligned_mem = align(raw_mem, alignment);
-
-        // tail always exists, head may be empty 
+        
+        void* aligned_mem = align(raw_mem, address_alignment);
+        
+        // TODO : ability to place memory on some aligned address without actually aligning size sounds ... questionable???
+        // size must be aligned to page boundary or range boundaries will be broken (tail range may start not on page boundary)
+        // tail always exists, head may be empty
         usize head_size = subptr(aligned_mem, raw_mem);
         if (head_size > 0) {
             vmem_free(raw_mem, head_size);
         }
-        vmem_free(advance_ptr(aligned_mem, aligned_size), aligned_size - head_size);// tail
+        usize page_aligned_size = align(size, page_size);
+        usize tail_size = address_aligned_size + address_alignment - page_aligned_size - head_size;
+        vmem_free(advance_ptr(aligned_mem, page_aligned_size), tail_size);
 
         if (alloc_type == VMemReserveCommit) {
-            vmem_commit(aligned_mem, aligned_size);
+            vmem_commit(aligned_mem, page_aligned_size); // page_aligned_size is not strictly neccessary here
         }
         return aligned_mem;
     }

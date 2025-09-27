@@ -5,74 +5,25 @@
 #include <concepts>
 #include <type_traits>
 
-// configured
-#include <cuw3/config.hpp>
+#include "cuw3/config.hpp" // generated
+#include "cuw3/typedefs.hpp"
 
 #define CUW3_CACHELINE_SIZE 64
 #define CUW3_CONTROL_BLOCK_SIZE 128
+
 #define CUW3_PAGE_SIZE 4096
 #define CUW3_HUGEPAGE_SIZE (1 << 21)
 
+#define CUW3_MAX_REGION_SIZES 8
+#define CUW3_REGION_SIZES_LOG2       36,36,36,36,36,36
+#define CUW3_REGION_CHUNK_SIZES_LOG2 21,22,23,24,25,26
+
+#define CUW3_REGION_CHUNK_POOL_CONTENTION_SPLIT 2
+
+#define CUW3_MAX_CONTENTION_SPLIT 4
+
+#define CUW3_MIN_ALLOC_SIZE 16
+#define CUW3_MIN_ALLOC_ALIGNMENT 16
+
 // TODO : platform defines
 // TODO : build configuration defines
-
-// TODO : enforce some checks on definitions
-
-// TODO : page size
-// TODO : page bits
-// TODO : page granularity
-// TODO : page granularity bits
-// TODO : huge page size
-// TODO : huge page size bits
-
-// TODO : memory reserve amount
-// TODO : count of region size classes
-// TODO : contention split for region allocator (count of lists)
-
-// TODO : bit width of the head field (handle list field as well)
-// TODO : bit width of the version field 
-
-// TODO : minimum allocation alignment
-// TODO : minimum allocation alignment bits
-
-
-namespace cuw3 {
-    using uint = unsigned;
-
-    using uint8 = uint8_t;
-    using uint16 = uint16_t;
-    using uint32 = uint32_t;
-    using uint64 = uint64_t;
-
-    using int8 = int8_t;
-    using int16 = int16_t;
-    using int32 = int32_t;
-    using int64 = int64_t;
-
-    using intptr = intptr_t;
-    using uintptr = uintptr_t;
-
-    using ptrdiff = ptrdiff_t;
-
-    using gsize = size_t;
-    using usize = std::make_unsigned_t<gsize>;
-    using ssize = std::make_signed_t<gsize>;
-
-    template<class T>
-    concept SignedInteger = std::signed_integral<T>;
-    
-    template<class T>
-    concept UnsignedInteger = std::unsigned_integral<T>;
-    
-    template<class T>
-    concept Integer = std::integral<T>;
-
-    template<class T>
-    concept IntptrLike = std::is_same_v<T, intptr> || std::is_same_v<T, uintptr> || sizeof(T) >= sizeof(uintptr);
-
-    template<class T>
-    concept VoidLike = std::is_void_v<T>;
-
-    inline constexpr uint64 cacheline = CUW3_CACHELINE_SIZE;
-    inline constexpr uint64 config_control_block_size = CUW3_CONTROL_BLOCK_SIZE;
-}
