@@ -89,7 +89,7 @@ namespace cuw3 {
         }
 
         template<class Backoff, class ExternalDataOps>
-        LinkType pop(int attempts, Backoff&& backoff, ExternalDataOps&& external_data_ops) {
+        [[nodiscard]] LinkType pop(int attempts, Backoff&& backoff, ExternalDataOps&& external_data_ops) {
             auto head_ref = std::atomic_ref{*head};
             auto head_old = head_ref.load(std::memory_order_relaxed);
             for (int curr = attempts; curr != 0; curr -= curr > 0) {
@@ -106,7 +106,7 @@ namespace cuw3 {
         }
 
         template<class Backoff, class ExternalDataOps>
-        LinkType pop(Backoff&& backoff, ExternalDataOps&& external_data_ops) {
+        [[nodiscard]] LinkType pop(Backoff&& backoff, ExternalDataOps&& external_data_ops) {
             return pop(-1, backoff, external_data_ops);
         }
 
@@ -128,7 +128,7 @@ namespace cuw3 {
         static constexpr LinkType null_link = Traits::null_link;
         static constexpr LinkType op_failed = Traits::op_failed;
 
-        LinkType bump() {
+        [[nodiscard]] LinkType bump() {
             auto top_ref = std::atomic_ref{*top};
             auto top_old = top_ref.load(std::memory_order_relaxed);
             if (top_old >= limit) {
@@ -147,5 +147,54 @@ namespace cuw3 {
 
         LinkType* top{};
         LinkType limit{};
+    };
+
+    // TODO : explain
+    struct AtomicPushSnatchListTraits {
+
+    };
+
+    template<class Traits>
+    struct AtomicPushSnatchList {
+        using Head = typename Traits::Head;
+        using Node = typename Traits::Node;
+        using Null = typename Traits::Null;
+
+        static Null constexpr null_node = Traits::null_node;
+
+        template<class Backoff, class NodeOps>
+        [[nodiscard]] Node pop(Backoff&& backoff, NodeOps&& node_ops) {
+            auto popped = snatch();
+            if (popped == null_node) {
+                return null_node;
+            }
+            auto rem_list = node_ops.get_next(popped);
+            if (rem_list != null_node) {
+                push(rem_list, backoff, node_ops);
+            }
+            return popped;
+        }
+
+        template<class Backoff, class NodeOps>
+        void push(Node list_head, Backoff&& backoff, NodeOps&& node_ops) {
+            CUW3_ASSERT(list_head != null_node, "list_head must not be null");
+
+            auto head_ref = std::atomic_ref{*head};
+            auto head_old = head_ref.load(std::memory_order_relaxed);
+            auto list_tail = node_ops.get_tail(list_head);
+            while (true) {
+                node_ops.set_next(list_tail, head_old);
+                if (head_ref.compare_exchange_strong(head_old, list_head, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                    break;
+                }
+                backoff();
+            }
+        }
+
+        [[nodiscard]] Node snatch() {
+            return std::atomic_ref{*head}.exchange(null_node, std::memory_order_acq_rel);
+        }
+
+        Head* head{};
     };
 }

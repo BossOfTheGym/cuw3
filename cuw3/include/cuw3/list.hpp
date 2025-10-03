@@ -151,7 +151,7 @@ namespace cuw3 {
         }
 
         Node* get_next(Node* node) {
-            return node->nextl;
+            return node->next;
         }
 
         void set_next(Node* node, Node* next) {
