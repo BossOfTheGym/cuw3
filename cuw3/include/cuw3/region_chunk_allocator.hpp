@@ -501,23 +501,13 @@ namespace cuw3 {
             return {chunk_memory, handle_memory};
         }
 
-        uint32 get_handle_index(void* handle) {
-            if (handle < handles || handle >= advance_ptr(handles, specs.total_handles_size)) {
-                return last_handle();
-            }
-            if (is_aligned(handle, specs.handle_size)) {
-                return last_handle();
-            }
-            return divpow2(subptr(handle, handles), specs.handle_size_log2);
-        }
-
         RegionChunkLocation allocation_to_location(RegionChunkAllocation allocation) {
             if (allocation.handle < handles || allocation.handle >= advance_ptr(handles, specs.total_handles_size)) {
                 return {};
             }            
             RegionChunkLocation location = locate_chunk(allocation.chunk);
             CUW3_ASSERT(valid_chunk_location(location), "invalid chunk location was computed on attempt to deallocate chunk");
-            if (location.handle != get_handle_index(allocation.handle)) {
+            if (location.handle != index_from_handle(allocation.handle)) {
                 return {};
             }
             return location;
@@ -601,6 +591,23 @@ namespace cuw3 {
         uint32 last_handle() const {
             return specs.num_handles;
         }
+
+        [[nodiscard]] uint32 index_from_handle(void* handle) {
+            if (handle < handles || handle >= advance_ptr(handles, specs.total_handles_size)) {
+                return last_handle();
+            }
+            if (!is_aligned(handle, specs.handle_size)) {
+                return last_handle();
+            }
+            return divpow2(subptr(handle, handles), specs.handle_size_log2);
+        }
+
+        [[nodiscard]] void* handle_from_index(uint32 index) {
+            if (index >= specs.num_handles) {
+                return nullptr;
+            }
+            return advance_arr_log2(handles, specs.handle_size_log2, index);
+        }        
 
         [[nodiscard]] uint32 search_suitable_region(uint64 size) {
             for (usize i = 0; i < specs.num_regions; i++) {
