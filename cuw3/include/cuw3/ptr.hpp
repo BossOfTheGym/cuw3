@@ -107,10 +107,36 @@ namespace cuw3 {
 
     struct NullOffsetPtr {
         template<class T>
-        operator OffsetPtr<T>() const {
+        constexpr operator OffsetPtr<T>() const {
             return {};
         }
     };
 
     inline constexpr NullOffsetPtr null_offset_ptr = {};
+
+    struct FailedPtr {
+        static constexpr uintptr value = -1;
+
+        template<IntptrLike T>
+        operator T() const {
+            return -1;
+        }
+
+        template<class T>
+        operator T*() const {
+            return (T*)value;
+        }
+    };
+
+    template<class T>
+    bool operator==(T* ptr, FailedPtr) {
+        return (uintptr)ptr == FailedPtr::value;
+    }
+
+    template<class T>
+    bool operator==(FailedPtr, T* ptr) {
+        return (uintptr)ptr == FailedPtr::value;
+    }
+
+    inline constexpr FailedPtr failptr{};
 }

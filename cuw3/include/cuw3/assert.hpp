@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <iostream>
 
 // TODO : something more fancy, this is mostly a stub
 #define CUW3_ASSERT(cond, fmt, ...) assert(!!(cond))
@@ -10,6 +11,12 @@
         CUW3_ABORT(fmt __VA_OPT__(,) __VA_ARGS__);\
     }\
 } while(0)
-#define CUW3_ALERT(fmt, ...)
+#define CUW3_ALERT_RETURN_ON(cond, ...) \
+    do { \
+        if ((cond)) { \
+            std::cerr << #cond << std::endl; \
+            return false; \
+        } \
+    } while(0)
 
 namespace cuw3 {}
