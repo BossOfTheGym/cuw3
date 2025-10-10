@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <functional>
 
+#include "cuw3/assert.hpp"
+#include "cuw3/funcs.hpp"
 #include "ptr.hpp"
 #include "conf.hpp"
 #include "vmem.hpp"
@@ -56,12 +58,12 @@ namespace cuw3 {
     struct RegionChunkAllocatorSpecs {
         // not an error if some region has zero chunks (region size is less than size of a single chunk)
         static bool init(RegionChunkAllocatorSpecs* specs, const RegionChunkAllocatorSpecsConfig& config) {
-            CUW3_ALERT_RETURN_ON(!specs);
-            CUW3_ALERT_RETURN_ON(config.num_region_sizes == 0 || config.num_region_sizes > conf_max_region_sizes);
-            CUW3_ALERT_RETURN_ON(config.num_region_sizes != config.num_region_chunk_sizes);
-            CUW3_ALERT_RETURN_ON(!is_pow2(config.handle_size));
-            CUW3_ALERT_RETURN_ON(!is_alignment(config.region_storage_alignment));
-            CUW3_ALERT_RETURN_ON(!is_alignment(config.handle_storage_alignment));
+            CUW3_ALERT_RETURN_VAL(!specs, false);
+            CUW3_ALERT_RETURN_VAL(config.num_region_sizes == 0 || config.num_region_sizes > conf_max_region_sizes, false);
+            CUW3_ALERT_RETURN_VAL(config.num_region_sizes != config.num_region_chunk_sizes, false);
+            CUW3_ALERT_RETURN_VAL(!is_pow2(config.handle_size), false);
+            CUW3_ALERT_RETURN_VAL(!is_alignment(config.region_storage_alignment), false);
+            CUW3_ALERT_RETURN_VAL(!is_alignment(config.handle_storage_alignment), false);
 
             bool all_region_sizes_equal = all_equal(config.region_sizes, config.region_sizes + config.num_region_sizes);
             uint64 region_size = all_region_sizes_equal ? align(intpow2(config.region_sizes[0]), config.region_storage_alignment) : 0;
@@ -221,8 +223,8 @@ namespace cuw3 {
 
     struct RegionChunkAllocatorPools {
         static bool init(RegionChunkAllocatorPools* pools, const RegionChunkAllocatorPoolsConfig& config) {
-            CUW3_ALERT_RETURN_ON(config.contention_split > conf_max_contention_split);
-            CUW3_ALERT_RETURN_ON(!is_pow2(config.contention_split));
+            CUW3_ALERT_RETURN_VAL(config.contention_split > conf_max_contention_split, false);
+            CUW3_ALERT_RETURN_VAL(!is_pow2(config.contention_split), false);
 
             const RegionChunkAllocatorSpecs* specs = config.allocator_specs;
             uint64 contention_split = config.contention_split ? config.contention_split : 1;
@@ -353,9 +355,9 @@ namespace cuw3 {
     // this is commonly a global shared entity
     struct RegionChunkAllocatorState {
         static bool init(RegionChunkAllocatorState* state, const RegionAllocatorStateConfig& config) {
-            CUW3_ALERT_RETURN_ON(!config.pools_config);
-            CUW3_ALERT_RETURN_ON(!config.regions);
-            CUW3_ALERT_RETURN_ON(!config.handles);
+            CUW3_ALERT_RETURN_VAL(!config.pools_config, false);
+            CUW3_ALERT_RETURN_VAL(!config.regions, false);
+            CUW3_ALERT_RETURN_VAL(!config.handles, false);
 
             if (!RegionChunkAllocatorPools::init(&state->pools, *config.pools_config)) {
                 return false;
@@ -413,6 +415,10 @@ namespace cuw3 {
 
     struct RegionChunkMemory {
         explicit operator bool() const {
+            return valid();
+        }
+
+        bool valid() const {
             return chunk;
         }
 
@@ -540,6 +546,26 @@ namespace cuw3 {
             return advance_arr_log2(state->handles, specs->handle_size_log2, index);
         }
 
+        [[nodiscard]] RegionChunkMemory region_data_to_memory_no_check(uint32 region, uint32 chunk, uint32 handle) {
+            auto& region_specs = specs->region_specs[region];
+            void* chunk_mem = advance_arr_log2(advance_ptr(state->regions, region_specs.region_offset), region_specs.chunk_size_log2, chunk);
+            void* handle_mem = advance_arr_log2(state->handles, specs->handle_size_log2, handle);
+            return {chunk_mem, handle_mem};
+        }
+
+        [[nodiscard]] RegionChunkMemory region_data_to_memory(uint32 region, uint32 chunk, uint32 handle) {
+            CUW3_ALERT_RETURN_VAL(region >= specs->num_regions, {});
+            CUW3_ALERT_RETURN_VAL(handle >= specs->num_handles, {});
+
+            auto& region_specs = specs->region_specs[region];
+            CUW3_ALERT_RETURN_VAL(region_specs.num_handles == 0, {});
+            
+            CUW3_ALERT_RETURN_VAL(chunk >= region_specs.num_handles, {});
+            CUW3_ALERT_RETURN_VAL(!(region_specs.handle_offset <= handle && handle < region_specs.handle_offset + region_specs.num_handles), {});
+            
+            return region_data_to_memory_no_check(region, chunk, handle);
+        }
+
         [[nodiscard]] uint32 search_suitable_region(uint64 size) {
             for (usize i = 0; i < specs->num_regions; i++) {
                 if (size <= specs->chunk_size_search_sentinels[i]) {
@@ -590,7 +616,7 @@ namespace cuw3 {
             }
         }
 
-        // NOTE : if I even would like to implement deallocate_chunk_chain function I can remember that
+        // NOTE : if I liked to implement deallocate_chunk_chain function I can remember that
         // next pointer is a function from handle memory location:
         // next = some_fancy_functor(handle)
         // void deallocate_chunk_chain(...) {}
