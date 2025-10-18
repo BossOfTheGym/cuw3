@@ -25,40 +25,43 @@ namespace cuw3 {
     // We can also implement version with count hint at a cost of smaller bit-width of the version field.
 
     // Example:
-    // 
-    // using ExampleLinkType = uint64;
-    // 
-    // struct ExampleExternalDataNode {
-    //     ExampleLinkType next{};
-    //     void* very_important_node_specific_data{};
-    // };
-    // 
-    // struct ExampleAtomicListTraits {
-    //     using LinkType = ExampleLinkType;
-    // 
-    //     struct ListHead {
-    //         LinkType version:32, next:32;
-    //     };
-    //     
-    //     static constexpr LinkType null_link = 0xFFFFFFFF;
-    //     static constexpr LinkType op_failed = 0xFFFFFFFE;
-    // };
-    // 
-    // struct ExampleNodeOps {
-    //     void set_next(ExampleLinkType node, ExampleLinkType next) {
-    //          std::atomic_ref{nodes[node].next}.store(next, std::memory_order_relaxed);
-    //     }
-    // 
-    //     uint64 get_next(ExampleLinkType node) {
-    //         return std::atomic_ref{nodes[node].next}.load(std::memory_order_relaxed);
-    //     }
-    // 
-    //     ExampleExternalDataNode* nodes{};
-    // };
-    // 
+    /*
+        using ExampleLinkType = uint64;
+        
+        struct ExampleExternalDataNode {
+            ExampleLinkType next{};
+            void* very_important_node_specific_data{};
+        };
+        
+        struct ExampleAtomicListTraits {
+            using LinkType = ExampleLinkType;
+        
+            struct ListHead {
+                LinkType version:32, next:32;
+            };
+            
+            static constexpr LinkType null_link = 0xFFFFFFFF;
+            static constexpr LinkType op_failed = 0xFFFFFFFE;
+        };
+        
+        struct ExampleNodeOps {
+            void set_next(ExampleLinkType node, ExampleLinkType next) {
+                std::atomic_ref{nodes[node].next}.store(next, std::memory_order_relaxed);
+            }
+        
+            uint64 get_next(ExampleLinkType node) {
+                return std::atomic_ref{nodes[node].next}.load(std::memory_order_relaxed);
+            }
+        
+            ExampleExternalDataNode* nodes{};
+        };
+    */
     // - ListHead must have version and head fields
     // - ListHead must be constructible from two consecutive numbers: version & next
     // - NodeOps must provide two functions: set_next and get_next to manipulate links of external data
+    //
+    // head and link here are separate types in general: head is a versioned link, link is link itself - so we require type distinction here
+    // link type is assumed to be an int-like type here
     template<class AtomicListTraits>
     struct AtomicListView {
         using Traits = AtomicListTraits;
@@ -121,6 +124,9 @@ namespace cuw3 {
     // Traits can look like AtomicListTraits
     //
     // For now, bump() always succeeds
+    //
+    // types of top and link match here so no need to create a different type
+    // link type is assumed to be an int-like type here
     template<class AtomicBumpStackTraits>
     struct AtomicBumpStackView {
         using Traits = AtomicBumpStackTraits;
@@ -152,53 +158,72 @@ namespace cuw3 {
         LinkType limit{};
     };
 
-    // TODO : check
     // this data structure helps to manage singly-linked atomic list
     // each node hold reference to the next node as well to the tail of the list
     // you cannot pop separate node: you only snatch entire list
     // utilizes plain pointers
+    // node must have at least two pointers: next pointer and tail pointer
+    //
+    // head and node can be basically
+    //
+    // your average node and node ops may look like:
+    /*
+        struct Node;
+
+        using Link = Node*;
+
+        struct Node {
+            Link next{};
+            Link tail{};
+        };
+
+        struct NodeOps {
+            Link get_tail(Link node) {
+                return node->next;
+            }
+
+            void set_next(Link node, Link next) {
+                node->next = next;
+            }
+        };
+    */
     template<class AtomicPushSnatchListTraits>
     struct AtomicPushSnatchList {
         using Traits = AtomicPushSnatchListTraits;
-        using Head = typename Traits::Head;
-        using Node = typename Traits::Node;
-        using Null = typename Traits::Null;
+        using LinkType = typename Traits::LinkType;
 
-        static Null constexpr null_node = Traits::null_node;
+        static LinkType constexpr null_link = Traits::null_link;
 
         template<class Backoff, class NodeOps>
-        [[nodiscard]] Node pop(Backoff&& backoff, NodeOps&& node_ops) {
-            auto popped = snatch();
-            if (popped == null_node) {
-                return null_node;
-            }
-            auto rem_list = node_ops.get_next(popped);
-            if (rem_list != null_node) {
-                push(rem_list, backoff, node_ops);
-            }
-            return popped;
-        }
-
-        template<class Backoff, class NodeOps>
-        void push(Node list_head, Backoff&& backoff, NodeOps&& node_ops) {
-            CUW3_ASSERT(list_head != null_node, "list_head must not be null");
+        bool push(int attempts, LinkType list_head, Backoff&& backoff, NodeOps&& node_ops) {
+            CUW3_ASSERT(list_head != null_link, "list_head must not be null");
 
             auto head_ref = std::atomic_ref{*head};
             auto head_old = head_ref.load(std::memory_order_relaxed);
             auto list_tail = node_ops.get_tail(list_head);
-            while (true) {
+            for (int attempt = attempts; attempt != 0; attempt -= attempt > 0) {
                 node_ops.set_next(list_tail, head_old);
                 if (head_ref.compare_exchange_strong(head_old, list_head, std::memory_order_acq_rel, std::memory_order_relaxed)) {
-                    break;
+                    return true;
                 }
                 backoff();
             }
+            return false;
         }
 
-        [[nodiscard]] Node snatch() {
-            return std::atomic_ref{*head}.exchange(null_node, std::memory_order_acq_rel);
+        template<class Backoff, class NodeOps>
+        void push(LinkType list_head, Backoff&& backoff, NodeOps&& node_ops) {
+            push(-1, list_head, backoff, node_ops);
         }
 
-        Head* head{};
+        [[nodiscard]] LinkType snatch() {
+            auto head_ref = std::atomic_ref{*head};
+            if (head_ref.load(std::memory_order_relaxed) == null_link) {
+                return null_link;
+            }
+            return head_ref.exchange(null_link, std::memory_order_acq_rel);
+        }
+
+        LinkType* head{};
     };
 }
