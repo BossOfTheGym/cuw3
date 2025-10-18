@@ -335,7 +335,7 @@ namespace cuw3 {
     
     using RegionChunkHandleHeaderData = AlignmentPackedPtr<uint64, region_chunk_handle_header_data_bits>;
     
-    inline constexpr uint64 region_chunk_handle_min_size = 16;
+    inline constexpr uint64 region_chunk_handle_min_size = 16; // just to be greater than 8
 
     // this struct must be at the beginning of each handle
     struct RegionChunkHandleHeader {
@@ -598,9 +598,11 @@ namespace cuw3 {
                 return {region_chunk_allocator_null_value};
             }
             for (int rounds = alloc_params.rounds; rounds != 0; ) {
-                if (auto allocation = _allocate_chunk(region, alloc_params)) {
+                auto allocation = _allocate_chunk(region, alloc_params);
+                if (allocation) {
                     return allocation;
-                } else if (allocation.failed()) {
+                }
+                if (allocation.null()) {
                     rounds -= rounds > 0;
                 }
             }
