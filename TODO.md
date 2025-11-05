@@ -6,8 +6,9 @@
 * test vmem on windows
 * test vmem on linux
 * test retire_reclaim scheme
-* test atomic list
+* test atomic lists
 * test region allocator
+* test graveyard
 
 *** implementation ***
 * allocator foundation

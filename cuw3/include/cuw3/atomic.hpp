@@ -179,11 +179,27 @@ namespace cuw3 {
 
         struct NodeOps {
             Link get_tail(Link node) {
-                return node->next;
+                return node->tail;
             }
+
+            void set_tail(Link node, Link tail) {
+                node->tail = tail;
+            }
+
+            void reset_tail(Link node) {
+                node->tail = nullptr;
+            }
+
+            Link get_next(Link node) {
+                return node->next;
+            } 
 
             void set_next(Link node, Link next) {
                 node->next = next;
+            }
+
+            void reset_next(Link node) {
+                node->next = nullptr;
             }
         };
     */

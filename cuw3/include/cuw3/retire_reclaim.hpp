@@ -96,23 +96,25 @@ namespace cuw3 {
 
     using RetireReclaimPtr = AlignmentPackedPtr<RetireReclaimRawPtr, retire_reclaim_flag_bits>;
 
+    // NOTE: even though alignment of16 is only required for root as it is the only resource that has all 4 flags
+    // but for the sake of simplicity this will be common requirement for all of the resources
     enum class RetireReclaimFlags : RetireReclaimRawPtr {
-        // read-only, must be applied to the root only, readonly flag, set once and then never updated again
-        RootResourceFlag = 1,
-
-        // read-write, applied to the root resource only, can be reset by the owner only
-        // mostly a status flag, exclusive access to the resource can be controlled via unset retired flag
-        OwnerAliveFlag = 2,
-
         // read-write, thread who retires can set this flag, reclaiming thread can reset this flag
         // retiring thread whenever sees that this flag has already been set stops retiring process
         // resource, marked as retired, can be used to signify that this resource will be exclusively operated on
         // and block other retiring threads to become a reclaiming thread
-        RetiredFlag = 4,
+        RetiredFlag = 1,
+
+        // read-only, must be applied to the root only, readonly flag, set once and then never updated again
+        RootResourceFlag = 2,
+
+        // read-write, applied to the root resource only, can be reset by the owner only
+        // mostly a status flag, exclusive access to the resource can be controlled via unset retired flag
+        OwnerAliveFlag = 4,
 
         // read-write, reclaiming thread postponed resource clean-up and moved root resource to the graveyard
         // mostly a status flag, exclusive access to the resource can be controlled via unset retired flag
-        // applied to the root
+        // applied to the root resource only
         GraveyardFlag = 8,
     };
 
@@ -135,15 +137,23 @@ namespace cuw3 {
             return RetireReclaimPtr::packed(ptr, flags);
         }
         
-        static RetireReclaimPtr root_resource_init() {
+        template<class ... Flag>
+        static RetireReclaimPtr data_with_flags(RetireReclaimRawPtr data, Flag ... flag) {
+            auto flags = (0 | ... | (RetireReclaimRawPtr)flag);
+            return RetireReclaimPtr::packed(data, flags);
+        }
+
+        static RetireReclaimPtr root_resource() {
             return ptr_with_flags(nullptr, RetireReclaimFlags::RootResourceFlag, RetireReclaimFlags::OwnerAliveFlag);
         }
 
-        // called by reclaiming thread
+        // called by reclaiming thread when alive
+        // preserves already raised flags
         // retired flag must be set!
-        [[nodiscard]] RetireReclaimPtr reclaim_preserve_flags() {
+        [[nodiscard]] RetireReclaimPtr reclaim_root() {
             auto resource_ref = std::atomic_ref{*resource};
             auto resource_old = resource_ref.load(std::memory_order_relaxed);
+            CUW3_CHECK(RetireReclaimFlagsHelper{resource_old.data()}.root_resource(), "resource must be root");
             CUW3_CHECK(RetireReclaimFlagsHelper{resource_old.data()}.retired(), "retired flag must have been set!");
 
             // retired is set, nobody can reset it
@@ -153,10 +163,14 @@ namespace cuw3 {
             return resource_ref.exchange(resource_new, std::memory_order_acq_rel);
         }
 
+        [[nodiscard]] RetireReclaimPtr reclaim() {
+
+        }
+
         // called by reclaiming thread
-        // attempts to reset some flags, retire-reclaim pointer must be empty
+        // attempts to reset some flags if retire-reclaim pointer is empty
         template<class ... Flag>
-        [[nodiscard]] bool try_to_reset_flags(Flag ... flag) {
+        [[nodiscard]] bool try_reset_flags(Flag ... flag) {
             auto flags = (0 | ... | (RetireReclaimRawPtr)flag);
 
             auto resource_ref = std::atomic_ref{*resource};
@@ -189,6 +203,8 @@ namespace cuw3 {
                 backoff();
             }
         }
+
+        // TODO : retire size & reclaim size
 
         RetireReclaimPtr* resource{};
     };

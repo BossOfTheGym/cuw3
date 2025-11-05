@@ -378,7 +378,7 @@ namespace cuw3 {
         void* handles{};
     };
 
-    using RegionAllocatorBackoff = SimpleBackoff;
+    using RegionChunkAllocatorBackoff = SimpleBackoff;
 
     inline constexpr int region_allocator_alloc_rounds = 4;
     inline constexpr int region_allocator_alloc_attempts = 2;
@@ -485,7 +485,7 @@ namespace cuw3 {
                 auto& pool_entry = state->pools.pool_entries[region][split];
 
                 auto list_view = RegionChunkPoolListView{&pool_entry.free_list};
-                uint32 handle = list_view.pop(alloc_params.attempts, RegionAllocatorBackoff{}, NodeOps{this});
+                uint32 handle = list_view.pop(alloc_params.attempts, RegionChunkAllocatorBackoff{}, NodeOps{this});
                 if (handle < list_view.op_failed) {
                     return {region, _region_handle_to_chunk(region, handle), handle, split};
                 }
@@ -520,7 +520,7 @@ namespace cuw3 {
 
             auto& pool_entry = state->pools.pool_entries[location.region][location.split];
             auto list_view = RegionChunkPoolListView{&pool_entry.free_list};
-            list_view.push(location.handle, RegionAllocatorBackoff{}, NodeOps{this});
+            list_view.push(location.handle, RegionChunkAllocatorBackoff{}, NodeOps{this});
         }
         
         
@@ -593,10 +593,12 @@ namespace cuw3 {
         }
 
 
+        // TODO : review this, this may be stupid, just decrease amount of rounds
         [[nodiscard]] RegionChunkAllocation allocate_chunk(uint32 region, RegionChunkAllocParams alloc_params) {
             if (region >= specs->num_regions) {
                 return {region_chunk_allocator_null_value};
             }
+            RegionChunkAllocatorBackoff backoff{};
             for (int rounds = alloc_params.rounds; rounds != 0; ) {
                 auto allocation = _allocate_chunk(region, alloc_params);
                 if (allocation) {
@@ -605,6 +607,7 @@ namespace cuw3 {
                 if (allocation.null()) {
                     rounds -= rounds > 0;
                 }
+                backoff();
             }
             return {region_chunk_allocator_null_value};
         }
@@ -618,7 +621,7 @@ namespace cuw3 {
             }
         }
 
-        // NOTE : if I liked to implement deallocate_chunk_chain function I can remember that
+        // NOTE : if I wanted to implement deallocate_chunk_chain function I can remember that
         // next pointer is a function from handle memory location:
         // next = some_fancy_functor(handle)
         // void deallocate_chunk_chain(...) {}
