@@ -150,6 +150,7 @@ namespace cuw3 {
         // called by reclaiming thread when alive
         // preserves already raised flags
         // retired flag must be set!
+        // can be used as for number resource as well
         [[nodiscard]] RetireReclaimPtr reclaim_root() {
             auto resource_ref = std::atomic_ref{*resource};
             auto resource_old = resource_ref.load(std::memory_order_relaxed);
@@ -163,12 +164,9 @@ namespace cuw3 {
             return resource_ref.exchange(resource_new, std::memory_order_acq_rel);
         }
 
-        [[nodiscard]] RetireReclaimPtr reclaim() {
-
-        }
-
         // called by reclaiming thread
         // attempts to reset some flags if retire-reclaim pointer is empty
+        // would work for both ptr and number resource representation
         template<class ... Flag>
         [[nodiscard]] bool try_reset_flags(Flag ... flag) {
             auto flags = (0 | ... | (RetireReclaimRawPtr)flag);
@@ -188,7 +186,7 @@ namespace cuw3 {
         // returns previously observed flags
         // resource_ops must contain only one op: void set_next(void* resource, void* head) {...}
         template<class Backoff, class ResourceOps>
-        RetireReclaimFlags retire(void* retired, Backoff&& backoff, ResourceOps&& resource_ops) {
+        RetireReclaimFlags retire_ptr(void* retired, Backoff&& backoff, ResourceOps&& resource_ops) {
             CUW3_CHECK(is_aligned(resource, retire_reclaim_pointer_alignment), "resource pointer is not placed ate the properly aligned location");
 
             auto resource_ref = std::atomic_ref{*resource};
@@ -204,7 +202,19 @@ namespace cuw3 {
             }
         }
 
-        // TODO : retire size & reclaim size
+        // special case when retired resource can be represented as just a number
+        template<class Backoff>
+        RetireReclaimFlags retire_data(RetireReclaimRawPtr data, Backoff&& backoff) {
+            auto resource_ref = std::atomic_ref{*resource};
+            auto resource_old = resource_ref.load(std::memory_order_relaxed);
+            while (true) {
+                auto resource_new = data_with_flags(resource_old.value_shifted() + data, resource_old.data(), RetireReclaimFlags::RetiredFlag);
+                if (resource_ref.compare_exchange_strong(resource_old, resource_new, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                    return (RetireReclaimFlags)resource_old.data();
+                }
+                backoff();
+            }
+        }
 
         RetireReclaimPtr* resource{};
     };
