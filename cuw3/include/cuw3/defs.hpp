@@ -25,5 +25,7 @@
 #define CUW3_MIN_ALLOC_SIZE 16
 #define CUW3_MIN_ALLOC_ALIGNMENT 16
 
+#define CUW3_GRAVEYARD_SLOT_COUNT 16
+
 // TODO : platform defines
 // TODO : build configuration defines

@@ -6,11 +6,8 @@
 #include "backoff.hpp"
 #include "retire_reclaim.hpp"
 
-#define CUW3_GRAVEYARD_SLOT_COUNT 16
 
 namespace cuw3 {
-    inline constexpr usize conf_graveyard_slot_count = CUW3_GRAVEYARD_SLOT_COUNT;
-
     // grave consists of slots and common retire list
     // first, you attempt to fill the slots, after that (if you failed) you push it to the common list
     

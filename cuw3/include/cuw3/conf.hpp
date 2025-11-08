@@ -41,4 +41,6 @@ namespace cuw3 {
     inline constexpr usize conf_max_contention_split = CUW3_MAX_CONTENTION_SPLIT;
 
     static_assert(conf_max_contention_split > 0, "contention split value must be greater than zero.");
+
+    inline constexpr usize conf_graveyard_slot_count = CUW3_GRAVEYARD_SLOT_COUNT;
 }
