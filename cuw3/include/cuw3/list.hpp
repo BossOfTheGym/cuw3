@@ -140,6 +140,11 @@ namespace cuw3 {
         return popped;
     }
 
+    struct DefaultListEntry {
+        DefaultListEntry* prev{};
+        DefaultListEntry* next{};
+    };
+
     template<class Node>
     struct DefaultListOps {
         Node* get_prev(Node* node) {

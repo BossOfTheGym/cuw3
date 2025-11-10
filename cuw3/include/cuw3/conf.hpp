@@ -5,8 +5,13 @@
 
 namespace cuw3 {
     inline constexpr uint64 conf_cacheline = CUW3_CACHELINE_SIZE;
-    inline constexpr uint64 conf_region_handle_size = 2 * conf_cacheline;
-    inline constexpr uint64 conf_control_block_size = CUW3_CONTROL_BLOCK_SIZE;
+
+    inline constexpr uint64 conf_control_block_size = align(std::max<uint64>(CUW3_CONTROL_BLOCK_SIZE, 2 * conf_cacheline), conf_cacheline);
+    inline constexpr uint64 conf_region_handle_size = conf_control_block_size;
+    inline constexpr uint64 conf_control_block_size_log2 = intlog2(conf_control_block_size);
+
+    inline constexpr uint64 conf_min_alloc_size = CUW3_MIN_ALLOC_SIZE; // TODO : checks
+    inline constexpr uint64 conf_min_alloc_alignment = CUW3_MIN_ALLOC_ALIGNMENT; // TODO : checks
 
     inline constexpr usize conf_max_region_sizes = CUW3_MAX_REGION_SIZES;
 

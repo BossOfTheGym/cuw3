@@ -75,7 +75,7 @@ namespace cuw3 {
     // maybe another list pointer to postpone reclamation if we need to reclaim way too much (it may delay current operation too much)
     //
     // let's sum up:
-    // 1. thread pointer + allocator type | handle next + none -> offset ptr (universal handle header) TODO : impose alignment constraint on thread allcoator
+    // 1. thread pointer + allocator type | handle next + none -> offset ptr (universal handle header) TODO : impose alignment constraint on thread allocator
     // 2. retire-reclaim pointer -> offset ptr
     // 3. list pointer to store all of the retired handles
     // 4. maybe list pointer that stores some postponed reclaimed resources
@@ -217,5 +217,10 @@ namespace cuw3 {
         }
 
         RetireReclaimPtr* resource{};
+    };
+
+    struct alignas(retire_reclaim_pointer_alignment) RetireReclaimEntry {
+        RetireReclaimPtr retired_resources_head{}; // list of retired subresources (resources from the lower level), atomic
+        void* next_retired{}; // we became retired ourselves, we are retired subresource for he higher resource
     };
 }

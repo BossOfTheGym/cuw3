@@ -144,7 +144,15 @@ namespace cuw3 {
 
         CUW3_ASSERT(ptr, "ptr must not be zero");
         return (Char*)ptr + mulpow2(elem_index, elem_size_log2);
-    } 
+    }
+
+    template<VoidLike T>
+    inline T* advance_chunk(T* ptr, intptr chunk_size, intptr chunk_size_log2, intptr index) {
+        using Char = SameConstAs<T, char>;
+
+        CUW3_ASSERT(ptr, "ptr must not be zero");
+        return (Char*)ptr + mulchunk(index, chunk_size, chunk_size_log2);
+    }
 
     template<class To, class From>
     To* transform_ptr(From* from, ptrdiff diff) {
