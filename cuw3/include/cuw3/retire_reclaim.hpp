@@ -91,8 +91,7 @@ namespace cuw3 {
     
     using RetireReclaimRawPtr = uint64;
     
-    inline constexpr RetireReclaimRawPtr retire_reclaim_flag_bits = 4;
-    inline constexpr RetireReclaimRawPtr retire_reclaim_pointer_alignment = 8;
+    inline constexpr RetireReclaimRawPtr retire_reclaim_flag_bits = 1;
 
     using RetireReclaimPtr = AlignmentPackedPtr<RetireReclaimRawPtr, retire_reclaim_flag_bits>;
 
@@ -107,6 +106,7 @@ namespace cuw3 {
     };
 
     struct RetireReclaimFlagsHelper {
+        RetireReclaimFlagsHelper(RetireReclaimPtr ptr) : flags{ptr.raw()} {}
         RetireReclaimFlagsHelper(RetireReclaimFlags fls) : flags{(RetireReclaimRawPtr)fls} {}
         RetireReclaimFlagsHelper(RetireReclaimRawPtr fls) : flags{fls} {}
 
@@ -168,8 +168,6 @@ namespace cuw3 {
         // resource_ops must contain only one op: void set_next(void* resource, void* head) {...}
         template<class Backoff, class ResourceOps>
         [[nodiscard]] RetireReclaimPtr retire_ptr(void* retired, Backoff&& backoff, ResourceOps&& resource_ops) {
-            CUW3_CHECK(is_aligned(resource, retire_reclaim_pointer_alignment), "resource pointer is not placed ate the properly aligned location");
-
             auto resource_ref = std::atomic_ref{*resource};
             auto resource_old = resource_ref.load(std::memory_order_relaxed);
             while (true) {
@@ -202,20 +200,20 @@ namespace cuw3 {
 
     // NOTE : you are not allowed to reclaim resources from retire-reclaim ptr until you have reclaimed everything that was postponed
     // in fact, you can but it would require to maintain tail of the postponed list (little bit more work to do but not impossible)
-    struct alignas(retire_reclaim_pointer_alignment) RetireReclaimEntry {
+    struct RetireReclaimEntry {
         // list of retired subresources (resources from the lower level), atomic
-        RetireReclaimPtr head{};
+        alignas(8) RetireReclaimPtr head{};
 
         // we became retired ourselves, we are retired subresource for he higher resource, non atomic
-        void* next{};
+        alignas(8) void* next{};
 
         // we reclaimed some resources but decided to postpone reclamation of some, non atomic
-        void* next_postponed{};
+        alignas(8) void* next_postponed{};
 
-        // I can't help but add it here, label that is a hint of the type owning this entry
+        // unused, I can't help but add it here, label that is a hint of the type owning this entry
         uint32 type_label{};
 
-        // I can't help but add it here, offset to the base of the type owning this entry 
+        // unused, I can't help but add it here, offset to the base of the type owning this entry 
         int32 base_offset{};
     };
 

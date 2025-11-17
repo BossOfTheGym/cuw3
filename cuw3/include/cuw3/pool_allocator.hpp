@@ -8,10 +8,9 @@
 #include "retire_reclaim.hpp"
 #include "region_chunk_handle.hpp"
 
-namespace cuw3 {
-    // TODO : NOTE about why you do we use this fuckery with cachelines (thread false sharing)
-    // TODO : more comments and explanations
+#include <utility>
 
+namespace cuw3 {
     // resource hierarchy
     // allocation -> pool shard -> pool shard pool -> region list -> root (thread)
 
@@ -21,7 +20,6 @@ namespace cuw3 {
         uint32 next{};
     };
 
-    // TODO : write region chunk type
     // NOTE: shard memory can be restored using shard handle
     struct PoolShardPool {
         struct alignas(conf_cacheline) {
@@ -90,7 +88,7 @@ namespace cuw3 {
         void* owner{};
 
         void* handle{};
-        gsize handle_size{}; // initialized to conf_control_block_size
+        gsize handle_size{}; // must be initialized to conf_control_block_size
 
         void* shard_pool_memory{};
         gsize shard_pool_memory_size{};
@@ -99,6 +97,8 @@ namespace cuw3 {
         gsize shard_pool_handles_size{};
 
         gsize pool_shard_size{};
+
+        RetireReclaimRawPtr retire_reclaim_flags{};
     };
 
     struct PoolShard {
@@ -153,6 +153,8 @@ namespace cuw3 {
 
             pool->shard_pool_handles = config.shard_pool_handles;
             pool->shard_pool_memory = config.shard_pool_memory;
+
+            pool->retire_reclaim_entry.head = RetireReclaimPtr::packed(nullptr, config.retire_reclaim_flags);
             return {pool};
         }
 
@@ -190,13 +192,13 @@ namespace cuw3 {
         }
 
         uint32 _index_from_shard_handle(void* shard_handle) {
-            CUW3_ASSERT(_valid_shard_handle(shard.shard_handle), "invalid shard handle");
+            CUW3_ASSERT(_valid_shard_handle(shard_handle), "invalid shard handle");
 
             return divpow2(subptr(shard_handle, pool->shard_pool_handles), conf_control_block_size_log2);
         }
 
         uint32 _index_from_shard_memory(void* shard_memory) {
-            CUW3_ASSERT(_valid_shard_memory(shard.shard_memory), "invalid shard memory");
+            CUW3_ASSERT(_valid_shard_memory(shard_memory), "invalid shard memory");
 
             return divpow2(subptr(shard_memory, pool->shard_pool_memory), pool->pool_shard_size_log2);
         }
@@ -258,7 +260,7 @@ namespace cuw3 {
 
         [[nodiscard]] RetireReclaimPtr retire_pool(ChunkPool* chunk_pool) {
             auto retire_reclaim_entry_view = RetireReclaimPtrView{&pool->retire_reclaim_entry.head};
-            return retire_reclaim_entry_view.retire_ptr(shard_handle, PoolShardPoolBackoff{}, RetireChunkPoolOps{});
+            return retire_reclaim_entry_view.retire_ptr(chunk_pool, PoolShardPoolBackoff{}, RetireChunkPoolOps{});
         }
 
         [[nodiscard]] RetireReclaimPtr reclaim_pools() {
@@ -273,7 +275,7 @@ namespace cuw3 {
         }
 
         [[nodiscard]] ChunkPool* reclaim_postponed_pools() {
-            return std::exchange(pool->retire_reclaim_entry.next_postponed, nullptr);
+            return (ChunkPool*)std::exchange(pool->retire_reclaim_entry.next_postponed, nullptr);
         }
 
 
@@ -290,6 +292,8 @@ namespace cuw3 {
 
         uint32 chunk_size{};
         uint32 chunk_alignment{};
+
+        RetireReclaimRawPtr retire_reclaim_flags{};
     };
 
     using ChunkPoolBackoff = SimpleBackoff;
@@ -316,6 +320,8 @@ namespace cuw3 {
             uint32 chunk_capacity = divchunk(config.pool_memory_size, true_chunk_size, pool->chunk_size_log2);
             pool->chunk_pool.capacity = chunk_capacity;
             pool->chunk_pool.head = pool->chunk_pool.capacity;
+
+            pool->retire_reclaim_entry.head = RetireReclaimPtr::packed(nullptr, config.retire_reclaim_flags);
             return {pool};
         }
 
@@ -380,9 +386,9 @@ namespace cuw3 {
             }
         };
 
-        [[nodiscard]] RetireReclaimFlags retire_chunk(void* chunk) {
+        [[nodiscard]] RetireReclaimPtr retire_chunk(void* chunk) {
             auto retire_reclaim_entry_view = RetireReclaimPtrView{&pool->retire_reclaim_entry.head};
-            return retire_reclaim_entry_view.retire(chunk, ChunkPoolBackoff{}, RetireChunkOps{pool});
+            return retire_reclaim_entry_view.retire_ptr(chunk, ChunkPoolBackoff{}, RetireChunkOps{});
         }
 
         [[nodiscard]] RetireReclaimPtr reclaim_chunks() {
@@ -396,8 +402,8 @@ namespace cuw3 {
             pool->retire_reclaim_entry.next_postponed = chunk;
         }
 
-        [[nodiscard]] void* reclaim_postponed_chunks() {
-            return std::exchange(pool->retire_reclaim_entry.next_postponed, nullptr);
+        [[nodiscard]] ChunkPoolHeader* reclaim_postponed_chunks() {
+            return (ChunkPoolHeader*)std::exchange(pool->retire_reclaim_entry.next_postponed, nullptr);
         }
 
 

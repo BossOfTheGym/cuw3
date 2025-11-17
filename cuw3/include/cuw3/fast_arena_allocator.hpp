@@ -2,6 +2,7 @@
 
 #include "conf.hpp"
 #include "list.hpp"
+#include "backoff.hpp"
 #include "retire_reclaim.hpp"
 #include "region_chunk_handle.hpp"
 
@@ -32,7 +33,6 @@ namespace cuw3 {
     static_assert(sizeof(FastArena) <= conf_control_block_size, "pack struct field better or increase size of the control block");
 
 
-    // TODO : do the fucking implementation
     struct FastArenaConfig {
         void* owner{};
 
@@ -42,6 +42,8 @@ namespace cuw3 {
         uint32 arena_handle_size{};
         uint32 arena_alignment{};
         uint32 arena_memory_size{};
+
+        RetireReclaimRawPtr retire_reclaim_flags{};
     };
 
     using FastArenaBackoff = SimpleBackoff;
@@ -59,14 +61,16 @@ namespace cuw3 {
 
             auto* arena = new (config.arena_handle) FastArena{};
             
-            auto new_region_chunk_header = RegionChunkHeaderData::packed(config.owner, (uint64)RegionChunkType::FastArena);
-            std::atomic_ref{arena->region_chunk_header.data}.store(new_region_chunk_header, std::memory_order_release);
+            auto new_region_chunk_header = RegionChunkHandleHeaderData::packed(config.owner, (uint64)RegionChunkType::FastArena);
+            std::atomic_ref{arena->region_chunk_header.data}.store(new_region_chunk_header, std::memory_order_release); // TODO : review this memory order
 
-            arena->arena_alignment = config.alignment;
+            arena->arena_alignment = config.arena_alignment;
             arena->top = 0;
             arena->arena_memory_size = config.arena_memory_size;
 
             arena->arena_memory = config.arena_memory;
+
+            arena->retire_reclaim_entry.head = RetireReclaimPtr::packed(nullptr, config.retire_reclaim_flags);
             return {arena};
         }
 
@@ -75,7 +79,7 @@ namespace cuw3 {
             CUW3_ASSERT(arena->arena_memory_size >= arena->top, "top is greater than memory size");
 
             uint64 remaining = arena->arena_memory_size - arena->top;
-            uint64 required_space = align(size, arena->alignment);
+            uint64 required_space = align(size, arena->arena_alignment);
             if (remaining < required_space) {
                 return nullptr;
             }
@@ -84,7 +88,7 @@ namespace cuw3 {
         }
 
         void release(uint64 size) {
-            uint64 alloc_freed = align(size, arena->alignment);
+            uint64 alloc_freed = align(size, arena->arena_alignment);
             uint64 new_freed = arena->freed + alloc_freed;
 
             CUW3_CHECK(new_freed <= arena->arena_memory_size, "we have freed more than allocated");
@@ -104,11 +108,11 @@ namespace cuw3 {
 
         void retire_allocation(uint64 size) {
             auto retire_reclaim_entry_view = RetireReclaimPtrView{&arena->retire_reclaim_entry.head};
-            retire_reclaim_entry_view.retire_data(size, FastArenaBackoff{});
+            RetireReclaimPtr old = retire_reclaim_entry_view.retire_data(size, FastArenaBackoff{});
         }
 
         void reclaim_allocations() {
-            auto return_reclaim_entry_view = RetireReclaimPtrView{&arena->retire_reclaim_entry.head};
+            auto retire_reclaim_entry_view = RetireReclaimPtrView{&arena->retire_reclaim_entry.head};
             RetireReclaimPtr reclaimed = retire_reclaim_entry_view.reclaim();
             release(reclaimed.value_shifted());
         }

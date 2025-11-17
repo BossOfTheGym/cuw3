@@ -3,12 +3,15 @@
 * benchmarking (maybe)
 
 *** testing ***
-* test vmem on windows
 * test vmem on linux
 * test retire_reclaim scheme
 * test atomic lists
 * test region allocator
 * test graveyard
+* test pool_allocator
+* test fast_arena_allocator
+
+* test vmem on windows
 
 *** implementation ***
 * allocator foundation
