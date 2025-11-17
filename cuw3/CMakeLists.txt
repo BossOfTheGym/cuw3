@@ -1,21 +1,21 @@
 set(CUW3_LIB_HEADERS
-    include/cuw3/arena.hpp
     include/cuw3/assert.hpp
     include/cuw3/atomic.hpp
     include/cuw3/backoff.hpp
     include/cuw3/cuw3.hpp
     include/cuw3/defs.hpp
     include/cuw3/export.hpp
-    include/cuw3/fast_arena.hpp
+    include/cuw3/fast_arena_allocator.hpp
     include/cuw3/funcs.hpp
-    include/cuw3/handle.hpp
     include/cuw3/list.hpp
-    include/cuw3/pool.hpp
+    include/cuw3/pool_allocator.hpp
     include/cuw3/ptr.hpp
-    include/cuw3/region_allocator.hpp
-    include/cuw3/region_pool.hpp
+    include/cuw3/region_chunk_allocator.hpp
+    include/cuw3/region_chunk_handle.hpp
     include/cuw3/retire_reclaim.hpp
+    include/cuw3/thread_graveyard.hpp
     include/cuw3/thread_local_allocator.hpp
+    include/cuw3/typedef.hpp
     include/cuw3/utils.hpp
     include/cuw3/vmem.hpp
 )
@@ -35,7 +35,6 @@ configure_file(config.hpp.in include/cuw3/config.hpp @ONLY)
 
 add_library(cuw3 ${CUW3_LIB_TYPE} ${CUW3_LIB_SOURCES} ${CUW3_LIB_HEADERS} ${CMAKE_CURRENT_BINARY_DIR}/include/cuw3/config.hpp)
 
-# TODO : (learn about) target_sources and FILE_SET to install headers
 target_include_directories(cuw3
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -90,22 +89,6 @@ install(
     FILES
         ${CMAKE_CURRENT_BINARY_DIR}/cuw3Config.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/cuw3ConfigVersion.cmake
-    DESTINATION ${CUW3_INSTALL_CONFIGDIR}
+    DESTINATION 
+        ${CUW3_INSTALL_CONFIGDIR}
 )
-
-
-# TODO : create sort of a utility to make life less painful on windows
-#cmake_minimum_required(VERSION 3.30)
-#
-#project(cuw3_user DESCRIPTION "test cuw3 installation" LANGUAGES C CXX)
-#
-## provide via command line using -DCMAKE_PREFIX_PATH="<path>;..."
-#find_package(cuw3 CONFIG REQUIRED)
-#
-#add_executable(cuw3_user cuw3_user.cpp)
-#target_link_libraries(cuw3_user PRIVATE cuw3::cuw3)
-#add_custom_command(
-#    TARGET cuw3_user POST_BUILD
-#    COMMAND ${CMAKE_COMMAND} -E copy -t $<TARGET_FILE_DIR:cuw3_user> $<TARGET_RUNTIME_DLLS:cuw3_user>
-#    COMMAND_EXPAND_LISTS
-#)

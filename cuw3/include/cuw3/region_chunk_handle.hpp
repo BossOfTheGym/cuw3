@@ -54,4 +54,12 @@ namespace cuw3 {
     struct RegionChunkHandleHeader {
         RegionChunkHandleHeaderData data{}; // atomic memory location/readonly memory location
     };
+
+    // TODO : review all interractions with RegionChunkHandleHeader and probably wrap it all into the abstraction
+    struct RegionChunkHandleHeaderView {};
+
+    enum class RegionChunkType : uint32 {
+        PoolShardPool,
+        FastArena,
+    };
 }

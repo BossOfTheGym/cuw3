@@ -92,7 +92,7 @@ namespace cuw3 {
     using RetireReclaimRawPtr = uint64;
     
     inline constexpr RetireReclaimRawPtr retire_reclaim_flag_bits = 4;
-    inline constexpr RetireReclaimRawPtr retire_reclaim_pointer_alignment = 16;
+    inline constexpr RetireReclaimRawPtr retire_reclaim_pointer_alignment = 8;
 
     using RetireReclaimPtr = AlignmentPackedPtr<RetireReclaimRawPtr, retire_reclaim_flag_bits>;
 
@@ -104,28 +104,13 @@ namespace cuw3 {
         // resource, marked as retired, can be used to signify that this resource will be exclusively operated on
         // and block other retiring threads to become a reclaiming thread
         RetiredFlag = 1,
-
-        // read-only, must be applied to the root only, readonly flag, set once and then never updated again
-        RootResourceFlag = 2,
-
-        // read-write, applied to the root resource only, can be reset by the owner only
-        // mostly a status flag, exclusive access to the resource can be controlled via unset retired flag
-        OwnerAliveFlag = 4,
-
-        // read-write, reclaiming thread postponed resource clean-up and moved root resource to the graveyard
-        // mostly a status flag, exclusive access to the resource can be controlled via unset retired flag
-        // applied to the root resource only
-        GraveyardFlag = 8,
     };
 
     struct RetireReclaimFlagsHelper {
         RetireReclaimFlagsHelper(RetireReclaimFlags fls) : flags{(RetireReclaimRawPtr)fls} {}
         RetireReclaimFlagsHelper(RetireReclaimRawPtr fls) : flags{fls} {}
 
-        bool root_resource() const { return flags & (RetireReclaimRawPtr)RetireReclaimFlags::RootResourceFlag; }
-        bool owner_alive() const { return flags & (RetireReclaimRawPtr)RetireReclaimFlags::OwnerAliveFlag; }
         bool retired() const { return flags & (RetireReclaimRawPtr)RetireReclaimFlags::RetiredFlag; }
-        bool graveyard() const { return flags & (RetireReclaimRawPtr)RetireReclaimFlags::GraveyardFlag; }
 
         RetireReclaimRawPtr flags{};
     };
@@ -143,18 +128,14 @@ namespace cuw3 {
             return RetireReclaimPtr::packed(data, flags);
         }
 
-        static RetireReclaimPtr root_resource() {
-            return ptr_with_flags(nullptr, RetireReclaimFlags::RootResourceFlag, RetireReclaimFlags::OwnerAliveFlag);
-        }
-
-        // called by reclaiming thread when alive
+        // called by reclaiming thread
         // preserves already raised flags
         // retired flag must be set!
-        // can be used as for number resource as well
-        [[nodiscard]] RetireReclaimPtr reclaim_root() {
+        // can be used with number resource as well
+        [[nodiscard]] RetireReclaimPtr reclaim() {
             auto resource_ref = std::atomic_ref{*resource};
             auto resource_old = resource_ref.load(std::memory_order_relaxed);
-            CUW3_CHECK(RetireReclaimFlagsHelper{resource_old.data()}.root_resource(), "resource must be root");
+
             CUW3_CHECK(RetireReclaimFlagsHelper{resource_old.data()}.retired(), "retired flag must have been set!");
 
             // retired is set, nobody can reset it
@@ -186,7 +167,7 @@ namespace cuw3 {
         // returns previously observed flags
         // resource_ops must contain only one op: void set_next(void* resource, void* head) {...}
         template<class Backoff, class ResourceOps>
-        RetireReclaimFlags retire_ptr(void* retired, Backoff&& backoff, ResourceOps&& resource_ops) {
+        [[nodiscard]] RetireReclaimPtr retire_ptr(void* retired, Backoff&& backoff, ResourceOps&& resource_ops) {
             CUW3_CHECK(is_aligned(resource, retire_reclaim_pointer_alignment), "resource pointer is not placed ate the properly aligned location");
 
             auto resource_ref = std::atomic_ref{*resource};
@@ -196,7 +177,7 @@ namespace cuw3 {
 
                 resource_ops.set_next(retired, resource_old.ptr());
                 if (resource_ref.compare_exchange_strong(resource_old, resource_new, std::memory_order_acq_rel, std::memory_order_relaxed)) {
-                    return (RetireReclaimFlags)resource_old.data();
+                    return resource_old;
                 }
                 backoff();
             }
@@ -204,13 +185,13 @@ namespace cuw3 {
 
         // special case when retired resource can be represented as just a number
         template<class Backoff>
-        RetireReclaimFlags retire_data(RetireReclaimRawPtr data, Backoff&& backoff) {
+        [[nodiscard]] RetireReclaimPtr retire_data(RetireReclaimRawPtr data, Backoff&& backoff) {
             auto resource_ref = std::atomic_ref{*resource};
             auto resource_old = resource_ref.load(std::memory_order_relaxed);
             while (true) {
                 auto resource_new = data_with_flags(resource_old.value_shifted() + data, resource_old.data(), RetireReclaimFlags::RetiredFlag);
                 if (resource_ref.compare_exchange_strong(resource_old, resource_new, std::memory_order_acq_rel, std::memory_order_relaxed)) {
-                    return (RetireReclaimFlags)resource_old.data();
+                    return resource_old;
                 }
                 backoff();
             }
@@ -219,8 +200,24 @@ namespace cuw3 {
         RetireReclaimPtr* resource{};
     };
 
+    // NOTE : you are not allowed to reclaim resources from retire-reclaim ptr until you have reclaimed everything that was postponed
+    // in fact, you can but it would require to maintain tail of the postponed list (little bit more work to do but not impossible)
     struct alignas(retire_reclaim_pointer_alignment) RetireReclaimEntry {
-        RetireReclaimPtr retired_resources_head{}; // list of retired subresources (resources from the lower level), atomic
-        void* next_retired{}; // we became retired ourselves, we are retired subresource for he higher resource
+        // list of retired subresources (resources from the lower level), atomic
+        RetireReclaimPtr head{};
+
+        // we became retired ourselves, we are retired subresource for he higher resource, non atomic
+        void* next{};
+
+        // we reclaimed some resources but decided to postpone reclamation of some, non atomic
+        void* next_postponed{};
+
+        // I can't help but add it here, label that is a hint of the type owning this entry
+        uint32 type_label{};
+
+        // I can't help but add it here, offset to the base of the type owning this entry 
+        int32 base_offset{};
     };
+
+    static_assert(sizeof(RetireReclaimEntry) == 32);
 }
