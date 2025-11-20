@@ -183,7 +183,6 @@ namespace cuw3 {
     };
 
 
-    using RegionChunkPoolLinkType = uint32;
 
     inline constexpr RegionChunkPoolLinkType region_chunk_pool_null_link = 0xFFFFFFFF;
     inline constexpr RegionChunkPoolLinkType region_chunk_pool_failed_alloc = 0xFFFFFFFE;
@@ -382,16 +381,13 @@ namespace cuw3 {
                 CUW3_ASSERT(node < specs->num_handles, "invalid link value 'node' passed");
                 CUW3_ASSERT(next < specs->num_handles || next == region_chunk_pool_null_link, "invalid link value 'next' passed");
 
-                auto new_data = RegionChunkHandleHeaderData::packed_shifted(next, 0);
-                auto* handle = get_handle(node);
-                std::atomic_ref{handle->data}.store(new_data, std::memory_order_relaxed);
+                RegionChunkHandleHeaderView{get_handle(node)}.set_next_chunk(next);
             }
 
             RegionChunkPoolLinkType get_next(RegionChunkPoolLinkType node) {
                 CUW3_ASSERT(node < specs->num_handles, "invalid node handle passed");
 
-                auto* handle = get_handle(node);
-                return std::atomic_ref{handle->data}.load(std::memory_order_relaxed).value_shifted();
+                return RegionChunkHandleHeaderView{get_handle(node)}.get_next_chunk();
             }
 
             const RegionChunkAllocatorSpecs* specs{};

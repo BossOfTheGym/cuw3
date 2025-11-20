@@ -60,9 +60,7 @@ namespace cuw3 {
             CUW3_ASSERT(is_aligned(config.arena_memory, config.arena_alignment), "arena memory is not properly aligned");
 
             auto* arena = new (config.arena_handle) FastArena{};
-            
-            auto new_region_chunk_header = RegionChunkHandleHeaderData::packed(config.owner, (uint64)RegionChunkType::FastArena);
-            std::atomic_ref{arena->region_chunk_header.data}.store(new_region_chunk_header, std::memory_order_release); // TODO : review this memory order
+            RegionChunkHandleHeaderView{&arena->region_chunk_header}.start_chunk_lifetime(config.owner, (uint64)RegionChunkType::FastArena);
 
             arena->arena_alignment = config.arena_alignment;
             arena->top = 0;
@@ -70,7 +68,7 @@ namespace cuw3 {
 
             arena->arena_memory = config.arena_memory;
 
-            arena->retire_reclaim_entry.head = RetireReclaimPtr::packed(nullptr, config.retire_reclaim_flags);
+            RetireReclaimEntryView::create(&arena->retire_reclaim_entry, config.retire_reclaim_flags);
             return {arena};
         }
 
@@ -78,13 +76,14 @@ namespace cuw3 {
         [[nodiscard]] void* acquire(uint64 size) {
             CUW3_ASSERT(arena->arena_memory_size >= arena->top, "top is greater than memory size");
 
+            uint64 old_top = arena->top;
             uint64 remaining = arena->arena_memory_size - arena->top;
             uint64 required_space = align(size, arena->arena_alignment);
             if (remaining < required_space) {
                 return nullptr;
             }
             arena->top += required_space;
-            return advance_ptr(arena->arena_memory, required_space);
+            return advance_ptr(arena->arena_memory, old_top);
         }
 
         void release(uint64 size) {

@@ -217,5 +217,15 @@ namespace cuw3 {
         int32 base_offset{};
     };
 
+    struct RetireReclaimEntryView {
+        static RetireReclaimEntryView create(void* location, RetireReclaimRawPtr initial_flags) {
+            auto* entry = new (location) RetireReclaimEntry{};
+            entry->head = RetireReclaimPtr::packed(nullptr, initial_flags);
+            return {entry};
+        }
+
+        RetireReclaimEntry* entry{};
+    };
+
     static_assert(sizeof(RetireReclaimEntry) == 32);
 }

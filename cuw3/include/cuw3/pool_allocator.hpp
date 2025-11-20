@@ -139,9 +139,7 @@ namespace cuw3 {
             CUW3_ASSERT(given_num_handles >= expected_num_handles, "insufficient space for handles was provided");
 
             auto* pool = new (config.handle) PoolShardPool{};
-
-            auto new_region_chunk_header = RegionChunkHandleHeaderData::packed(config.owner, (uint64)RegionChunkType::PoolShardPool);
-            std::atomic_ref{pool->region_chunk_header.data}.store(new_region_chunk_header, std::memory_order_release); // TODO : review this memmory order
+            RegionChunkHandleHeaderView{&pool->region_chunk_header}.start_chunk_lifetime(config.owner, (uint64)RegionChunkType::PoolShardPool);
 
             pool->shard_pool.top = 0;
             pool->shard_pool.count = 0;
@@ -154,7 +152,7 @@ namespace cuw3 {
             pool->shard_pool_handles = config.shard_pool_handles;
             pool->shard_pool_memory = config.shard_pool_memory;
 
-            pool->retire_reclaim_entry.head = RetireReclaimPtr::packed(nullptr, config.retire_reclaim_flags);
+            RetireReclaimEntryView::create(&pool->retire_reclaim_entry, config.retire_reclaim_flags);
             return {pool};
         }
 
