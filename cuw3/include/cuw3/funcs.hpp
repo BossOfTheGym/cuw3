@@ -2,6 +2,8 @@
 
 #include <bit>
 #include <array>
+#include <cstring>
+#include <utility>
 #include <algorithm>
 #include <functional>
 #include <type_traits>

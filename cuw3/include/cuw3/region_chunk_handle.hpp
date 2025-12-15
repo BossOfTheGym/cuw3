@@ -43,8 +43,8 @@ namespace cuw3 {
     // But it must not be an issue because it will be allocated via virtual memory facility anyway (and common page size is 4Kib anyway (12 zero bits))
     //
     // As the name suggests: this must be placed at the beginning of the handle memory location
-    using RegionChunkHandleHeaderDataRaw = uint64; // TODO : maybe change uint64 to this
-
+    using RegionChunkHandleHeaderDataRaw = uint64;
+    
     inline constexpr uint64 region_chunk_handle_header_data_bits = 12;
     inline constexpr uint64 region_chunk_handle_header_ptr_alignment = 1 << region_chunk_handle_header_data_bits;
     
@@ -105,8 +105,28 @@ namespace cuw3 {
         RegionChunkHandleHeader* header{};
     };
 
+    // region chunk header always goes first
+    // this function zero initializes wohle handle without touching handle itself as (even though not crictical) introduces a race
+    // race can be considered 'safe' as there will be only threads possibly reading the value
+    template<class T>
+    T* initz_region_chunk_handle(void* chunk_handle, gsize chunk_handle_size) {
+        CUW3_ASSERT(chunk_handle_size >= conf_region_handle_size, "too little space for a chunk handle");
+        std::memset(advance_ptr(chunk_handle, sizeof(RegionChunkHandleHeader)), 0x00, chunk_handle_size - sizeof(RegionChunkHandleHeader));
+        return (T*)chunk_handle;
+    }
+
     enum class RegionChunkType : uint32 {
         PoolShardPool,
         FastArena,
     };
+
+    // dummy type to store both handle + memory when chunk is retired 
+    struct RegionChunkHandle {
+        RegionChunkHandleHeader header{};
+        RegionChunkHandle* next{};
+        void* chunk_memory{};
+        uint64 chunk_size{};
+    };
+
+    static_assert(sizeof(RegionChunkHandle) <= conf_region_handle_size, "too big region chunk handle");
 }

@@ -7,20 +7,26 @@
 #include "region_chunk_handle.hpp"
 
 namespace cuw3 {
+    // TODO : some notes about operation
+
     using FastArenaListEntry = DefaultListEntry;
 
     // resource hierarchy
-    // allocation -> arena -> region list -> root (thread)
+    // allocation -> arena -> (???)
     struct FastArena {
+        static FastArena* list_entry_to_arena(FastArenaListEntry* list_entry) {
+            return cuw3_field_to_obj(list_entry, FastArena, list_entry);
+        }
+
         struct alignas(conf_cacheline) {
             RegionChunkHandleHeader region_chunk_header{};
             FastArenaListEntry list_entry{};
 
             uint64 freed{};
             uint64 top{};
+            uint64 arena_memory_size{};
 
             uint64 arena_alignment{};
-            uint64 arena_memory_size{};
 
             void* arena_memory{};
         };
@@ -59,7 +65,7 @@ namespace cuw3 {
             CUW3_ASSERT(is_aligned(config.arena_memory_size, config.arena_alignment), "arena size is not properly aligned");
             CUW3_ASSERT(is_aligned(config.arena_memory, config.arena_alignment), "arena memory is not properly aligned");
 
-            auto* arena = new (config.arena_handle) FastArena{};
+            auto* arena = initz_region_chunk_handle<FastArena>(config.arena_handle, config.arena_handle_size);
             RegionChunkHandleHeaderView{&arena->region_chunk_header}.start_chunk_lifetime(config.owner, (uint64)RegionChunkType::FastArena);
 
             arena->arena_alignment = config.arena_alignment;
@@ -68,7 +74,7 @@ namespace cuw3 {
 
             arena->arena_memory = config.arena_memory;
 
-            RetireReclaimEntryView::create(&arena->retire_reclaim_entry, config.retire_reclaim_flags);
+            (void)RetireReclaimEntryView::create(&arena->retire_reclaim_entry, config.retire_reclaim_flags, (uint32)RegionChunkType::FastArena, offsetof(FastArena, retire_reclaim_entry));
             return {arena};
         }
 
@@ -104,6 +110,15 @@ namespace cuw3 {
             return arena->freed == arena->top;
         }
 
+        uint64 remaining() const {
+            CUW3_ASSERT(arena->arena_memory_size >= arena->top, "top is greater than memory size");
+
+            return arena->arena_memory_size - arena->top;
+        }
+
+        uint64 fill_factor(uint64 part_size, uint64 part_size_log2) const {
+            return divchunk(remaining() + part_size - 1, part_size, part_size_log2);
+        }
 
         void retire_allocation(uint64 size) {
             auto retire_reclaim_entry_view = RetireReclaimPtrView{&arena->retire_reclaim_entry.head};

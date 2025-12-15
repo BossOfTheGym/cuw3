@@ -6,6 +6,8 @@
 #include "assert.hpp"
 
 namespace cuw3 {
+    // TODO : create default node ops where possible
+    
     // This right here is ... somewhat viable implementation that will probably be used.
     // Somewhat because in theory version counter may overflow to the value some other modifying thread has previously read so program execution becomes undefined.
     // This should never happen in practice... Should not, at least.

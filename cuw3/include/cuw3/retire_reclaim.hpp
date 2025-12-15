@@ -88,7 +88,10 @@ namespace cuw3 {
     // also we don't have to store pointer in the pointer field: it can be whatever data we need (amount of retired resource)
     // also! we can use retired status to 'lock' some resource to transfer its ownership
     // but we can also store 3 additional status bits within it
-    
+    //
+    // when you reclaim some resource you must always reclaim subresource, reset its retired flag if it is not released
+    // this is crucial because otherwise subresource would not be able to retire when it is required (it would think it is already retired)
+    // if subresource cannot be properly reclaim it must be postponed then
     using RetireReclaimRawPtr = uint64;
     
     inline constexpr RetireReclaimRawPtr retire_reclaim_flag_bits = 1;
@@ -199,7 +202,9 @@ namespace cuw3 {
     };
 
     // NOTE : you are not allowed to reclaim resources from retire-reclaim ptr until you have reclaimed everything that was postponed
-    // in fact, you can but it would require to maintain tail of the postponed list (little bit more work to do but not impossible)
+    //   in fact, you can but it would require to maintain tail of the postponed list (little bit more work to do but not impossible)
+    // NOTE : resource itself can maintain tail so retire procedure can be implmented ... in little bit another manner
+    //   but it looks the same anyway
     struct RetireReclaimEntry {
         // list of retired subresources (resources from the lower level), atomic
         alignas(8) RetireReclaimPtr head{};
@@ -210,17 +215,19 @@ namespace cuw3 {
         // we reclaimed some resources but decided to postpone reclamation of some, non atomic
         alignas(8) void* next_postponed{};
 
-        // unused, I can't help but add it here, label that is a hint of the type owning this entry
+        // use it, if you want a hint of the type owning this entry
         uint32 type_label{};
 
-        // unused, I can't help but add it here, offset to the base of the type owning this entry 
+        // use it, if you want an offset to the base of the type owning this entry 
         int32 base_offset{};
     };
 
     struct RetireReclaimEntryView {
-        static RetireReclaimEntryView create(void* location, RetireReclaimRawPtr initial_flags) {
+        [[nodiscard]] static RetireReclaimEntryView create(void* location, RetireReclaimRawPtr initial_flags, uint32 type_label = 0, int32 base_offset = 0) {
             auto* entry = new (location) RetireReclaimEntry{};
             entry->head = RetireReclaimPtr::packed(nullptr, initial_flags);
+            entry->type_label = type_label;
+            entry->base_offset = base_offset;
             return {entry};
         }
 

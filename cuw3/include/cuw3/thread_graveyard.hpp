@@ -108,6 +108,7 @@ namespace cuw3 {
         ThreadGravePtr* grave_ptr{};
     };
 
+
     struct alignas(conf_cacheline) ThreadGraveEntry {
         ThreadGravePtr grave{}; // atomic
     };
@@ -149,14 +150,47 @@ namespace cuw3 {
     using ThreadAuxGraveList = AtomicPushSnatchList<ThreadAuxGraveListTraits>;
     using ThreadGraveyardBackoff = SimpleBackoff;
 
+    struct alignas(conf_cacheline) DefaultThreadGraveyardEntry {
+        DefaultThreadGraveyardEntry* next{};
+        DefaultThreadGraveyardEntry* tail{};
+    };
+    
+    struct DefaultThreadGraveyardOps {
+        void set_next(void* node, void* next) {
+            ((DefaultThreadGraveyardEntry*)node)->next = (DefaultThreadGraveyardEntry*)next;
+        }
+
+        void* get_next(void* node) {
+            return ((DefaultThreadGraveyardEntry*)node)->next;
+        }
+
+        void reset_next(void* node) {
+            ((DefaultThreadGraveyardEntry*)node)->next = nullptr;
+        }
+
+        void set_tail(void* node, void* tail) {
+            ((DefaultThreadGraveyardEntry*)node)->tail = (DefaultThreadGraveyardEntry*)tail;
+        }
+
+        void* get_tail(void* node) {
+            return ((DefaultThreadGraveyardEntry*)node)->tail;
+        }
+
+        void reset_tail(void* node) {
+            ((DefaultThreadGraveyardEntry*)node)->tail = nullptr;
+        }
+    };
+
     // will use simplified grave inspection algorithm
     struct ThreadGraveyard {
         static bool init(ThreadGraveyard* graveyard, uint num_grave_entries) {
+            // TODO : assertions
             graveyard->num_grave_entries = num_grave_entries;
             return true;
         }
 
         static bool initz(ThreadGraveyard* graveyard, uint num_grave_entries) {
+            // TODO : assertions
             *graveyard = {};
             return init(graveyard, num_grave_entries);
         }

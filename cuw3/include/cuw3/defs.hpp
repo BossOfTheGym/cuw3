@@ -8,6 +8,8 @@
 #include "cuw3/config.hpp" // generated
 #include "cuw3/typedefs.hpp"
 
+// macros are unchecked, all checks are done within conf.hpp
+
 #define CUW3_CACHELINE_SIZE 64
 #define CUW3_CONTROL_BLOCK_SIZE 128
 
@@ -29,3 +31,13 @@
 
 // TODO : platform defines
 // TODO : build configuration defines
+
+#define CUW3_POOL_SHARD_SIZE_POW2 17 // let it be 128Kib
+
+#define CUW3_MIN_CHUNK_POW2 4
+#define CUW3_MAX_CHUNK_POW2 13
+
+#define CUW3_FAST_ARENA_MIN_ALIGNMENT_POW2 4
+#define CUW3_FAST_ARENA_MAX_ALIGNMENT_POW2 9
+
+#define CUW3_FAST_ARENA_MAX_SPLIT 32

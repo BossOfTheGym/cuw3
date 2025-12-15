@@ -8,23 +8,29 @@
 #include "retire_reclaim.hpp"
 #include "region_chunk_handle.hpp"
 
-#include <utility>
-
 namespace cuw3 {
     // resource hierarchy
-    // allocation -> pool shard -> pool shard pool -> region list -> root (thread)
+    // allocation -> pool shard -> pool shard pool -> (???)
 
-    using PoolListEntry = DefaultListEntry;
+    using PoolShardPoolListEntry = DefaultListEntry;
 
-    struct PoolShardHandleHeader {
+    struct PoolShardPoolHandleHeader {
         uint32 next{};
     };
 
+    // TODO : 'pool shard pool' sounds fucking retarded
+    // I wanted it to mean something like 'pool of chunk pools'
+    // maybe I should name it something like that...
+
     // NOTE: shard memory can be restored using shard handle
     struct PoolShardPool {
+        static PoolShardPool* list_entry_to_shard_pool(PoolShardPoolListEntry* list_entry) {
+            return cuw3_field_to_obj(list_entry, PoolShardPool, list_entry);
+        }
+
         struct alignas(conf_cacheline) {
             RegionChunkHandleHeader region_chunk_header{};
-            PoolListEntry list_entry{};
+            PoolShardPoolListEntry list_entry{};
 
             struct {
                 uint32 top{};
@@ -33,7 +39,7 @@ namespace cuw3 {
                 uint32 capacity{};
             } shard_pool;
 
-            uint32 pool_shard_size_log2{}; // constant, but let it exist as a field
+            uint32 pool_shard_size_log2{};
             uint32 shard_pool_memory_size{}; // can also be determined externally but let it just rest here
 
             void* shard_pool_handles{}; // passed externally
@@ -48,17 +54,25 @@ namespace cuw3 {
     static_assert(sizeof(PoolShardPool) <= conf_control_block_size, "pack struct field better or increase size of the control block");
 
 
+    using ChunkPoolListEntry = DefaultListEntry; 
+
     struct ChunkPoolHeader {
-        uint32 next{};
-        void* next_retired{}; // just for convenience
+        union {
+            uint32 next;
+            void* next_retired{};
+        };
     };
 
-    static_assert(sizeof(ChunkPoolHeader) <= conf_min_alloc_size, "");
+    static_assert(sizeof(ChunkPoolHeader) <= conf_min_alloc_size, "we cannot guarantee enough space for chunk to be reired");
 
     // chunk pool is subresource of shard pool, we dont need to store reference to the shard pool here
     struct ChunkPool {
+        static ChunkPool* list_entry_to_chunk_pool(ChunkPoolListEntry* list_entry) {
+            return cuw3_field_to_obj(list_entry, ChunkPool, list_entry);
+        }
+
         struct alignas(conf_cacheline) {
-            PoolListEntry list_entry{};
+            ChunkPoolListEntry list_entry{};
 
             struct {
                 uint32 top{};
@@ -67,8 +81,9 @@ namespace cuw3 {
                 uint32 capacity{};
             } chunk_pool;
 
-            uint32 chunks_memory_size{};
+            uint32 bin_index{};
 
+            uint32 chunks_memory_size{};
             uint32 chunk_alignment{};
             uint32 chunk_size{};
             uint32 chunk_size_log2{};
@@ -121,6 +136,7 @@ namespace cuw3 {
     // location of shard_memory can be restored from the location of shard_handle
     struct PoolShardPoolView {
         [[nodiscard]] static PoolShardPoolView create(const PoolShardPoolConfig& config) {
+            // TODO : maybe insert an alignment assert here?
             CUW3_ASSERT(config.owner, "owner is null");
             CUW3_ASSERT(config.handle, "handle is null");
             CUW3_ASSERT(config.shard_pool_memory, "shard pool memory is null");
@@ -138,7 +154,7 @@ namespace cuw3 {
             CUW3_ASSERT(is_aligned(config.shard_pool_handles, conf_cacheline), "insufficient alignment for shard pool handles");
             CUW3_ASSERT(given_num_handles >= expected_num_handles, "insufficient space for handles was provided");
 
-            auto* pool = new (config.handle) PoolShardPool{};
+            auto* pool = initz_region_chunk_handle<PoolShardPool>(config.handle, config.handle_size);
             RegionChunkHandleHeaderView{&pool->region_chunk_header}.start_chunk_lifetime(config.owner, (uint64)RegionChunkType::PoolShardPool);
 
             pool->shard_pool.top = 0;
@@ -152,7 +168,7 @@ namespace cuw3 {
             pool->shard_pool_handles = config.shard_pool_handles;
             pool->shard_pool_memory = config.shard_pool_memory;
 
-            RetireReclaimEntryView::create(&pool->retire_reclaim_entry, config.retire_reclaim_flags);
+            (void)RetireReclaimEntryView::create(&pool->retire_reclaim_entry, config.retire_reclaim_flags, (uint32)RegionChunkType::PoolShardPool, offsetof(PoolShardPool, retire_reclaim_entry));
             return {pool};
         }
 
@@ -219,7 +235,7 @@ namespace cuw3 {
             if (pool->shard_pool.head != pool->shard_pool.capacity) {
                 uint32 shard_index = pool->shard_pool.head;
                 auto shard = _shard_from_index(shard_index);
-                pool->shard_pool.head = ((PoolShardHandleHeader*)shard.shard_handle)->next;
+                pool->shard_pool.head = ((PoolShardPoolHandleHeader*)shard.shard_handle)->next;
                 pool->shard_pool.count++;
                 return shard;
             }
@@ -236,7 +252,7 @@ namespace cuw3 {
         void release(PoolShard shard) {
             CUW3_ASSERT(_valid_pool_shard(shard), "what kind of shit are you trying to feed me!");
 
-            ((PoolShardHandleHeader*)shard.shard_handle)->next = pool->shard_pool.head;
+            new (shard.shard_handle) PoolShardPoolHandleHeader{ .next = pool->shard_pool.head };
             pool->shard_pool.head = _index_from_shard(shard);
             pool->shard_pool.count--;
         }
@@ -252,13 +268,13 @@ namespace cuw3 {
 
         struct RetireChunkPoolOps {
             void set_next(void* resource, void* head) {
-                ((ChunkPool*)resource)->retire_reclaim_entry.next = head;
+                ((RetireReclaimEntry*)resource)->next = head;
             }
         };
 
-        [[nodiscard]] RetireReclaimPtr retire_pool(ChunkPool* chunk_pool) {
+        [[nodiscard]] RetireReclaimPtr retire_pool(RetireReclaimEntry* retired_entry) {
             auto retire_reclaim_entry_view = RetireReclaimPtrView{&pool->retire_reclaim_entry.head};
-            return retire_reclaim_entry_view.retire_ptr(chunk_pool, PoolShardPoolBackoff{}, RetireChunkPoolOps{});
+            return retire_reclaim_entry_view.retire_ptr(retired_entry, PoolShardPoolBackoff{}, RetireChunkPoolOps{});
         }
 
         [[nodiscard]] RetireReclaimPtr reclaim_pools() {
@@ -266,14 +282,14 @@ namespace cuw3 {
             return retire_reclaim_entry_view.reclaim();
         }
 
-        void postpone_pool(ChunkPool* chunk_pool) {
+        void postpone_entry(RetireReclaimEntry* retired_entry) {
             CUW3_ASSERT(!pool->retire_reclaim_entry.next_postponed, "already postponed, invalid case");
 
-            pool->retire_reclaim_entry.next_postponed = chunk_pool;
+            pool->retire_reclaim_entry.next_postponed = retired_entry;
         }
 
-        [[nodiscard]] ChunkPool* reclaim_postponed_pools() {
-            return (ChunkPool*)std::exchange(pool->retire_reclaim_entry.next_postponed, nullptr);
+        [[nodiscard]] RetireReclaimEntry* reclaim_postponed_entries() {
+            return (RetireReclaimEntry*)std::exchange(pool->retire_reclaim_entry.next_postponed, nullptr);
         }
 
 
@@ -290,6 +306,7 @@ namespace cuw3 {
 
         uint32 chunk_size{};
         uint32 chunk_alignment{};
+        uint32 bin_index{}; // little hint facilitating chunk pool bin location, intrusive but useful
 
         RetireReclaimRawPtr retire_reclaim_flags{};
     };
@@ -313,13 +330,15 @@ namespace cuw3 {
             pool->chunk_size_log2 = is_pow2(config.chunk_size) ? intlog2(config.chunk_size) : 0;
             pool->chunk_size = config.chunk_size;
             pool->chunk_alignment = config.chunk_alignment;
+            pool->bin_index = config.bin_index;
 
             uint32 true_chunk_size = align(config.chunk_size, config.chunk_alignment);
             uint32 chunk_capacity = divchunk(config.pool_memory_size, true_chunk_size, pool->chunk_size_log2);
             pool->chunk_pool.capacity = chunk_capacity;
             pool->chunk_pool.head = pool->chunk_pool.capacity;
 
-            pool->retire_reclaim_entry.head = RetireReclaimPtr::packed(nullptr, config.retire_reclaim_flags);
+            // type can be null here as there are no other entry types
+            RetireReclaimEntryView::create(&pool->retire_reclaim_entry, config.retire_reclaim_flags, 0, offsetof(ChunkPool, retire_reclaim_entry));
             return {pool};
         }
 
@@ -364,7 +383,7 @@ namespace cuw3 {
         void release(void* chunk) {
             CUW3_ASSERT(_valid_chunk(chunk), "what the fuck are you trying to feed me?!!");
 
-            ((ChunkPoolHeader*)chunk)->next = pool->chunk_pool.head;
+            new (chunk) ChunkPoolHeader{{.next = pool->chunk_pool.head}};
             pool->chunk_pool.head = _chunk_to_index(chunk);
             pool->chunk_pool.count--;
         }
@@ -385,6 +404,8 @@ namespace cuw3 {
         };
 
         [[nodiscard]] RetireReclaimPtr retire_chunk(void* chunk) {
+            new (chunk) ChunkPoolHeader{{.next_retired = nullptr}};
+
             auto retire_reclaim_entry_view = RetireReclaimPtrView{&pool->retire_reclaim_entry.head};
             return retire_reclaim_entry_view.retire_ptr(chunk, ChunkPoolBackoff{}, RetireChunkOps{});
         }
