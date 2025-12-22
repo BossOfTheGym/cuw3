@@ -2,6 +2,7 @@
 
 #include "conf.hpp"
 #include "list.hpp"
+#include "bitmap.hpp"
 #include "backoff.hpp"
 #include "retire_reclaim.hpp"
 #include "region_chunk_handle.hpp"
@@ -55,7 +56,7 @@ namespace cuw3 {
     using FastArenaBackoff = SimpleBackoff;
 
     struct FastArenaView {
-        [[nodiscard]] static FastArenaView create(const FastArenaConfig& config) {
+        [[nodiscard]] static FastArena* create_fast_arena(const FastArenaConfig& config) {
             CUW3_ASSERT(config.owner, "owner was null");
             CUW3_ASSERT(config.arena_handle, "arena handle was null");
             CUW3_ASSERT(config.arena_memory, "arena memory was null");
@@ -75,7 +76,11 @@ namespace cuw3 {
             arena->arena_memory = config.arena_memory;
 
             (void)RetireReclaimEntryView::create(&arena->retire_reclaim_entry, config.retire_reclaim_flags, (uint32)RegionChunkType::FastArena, offsetof(FastArena, retire_reclaim_entry));
-            return {arena};
+            return arena;
+        }
+
+        [[nodiscard]] static FastArenaView create(const FastArenaConfig& config) {
+            return {create_fast_arena(config)};
         }
 
 
@@ -133,5 +138,111 @@ namespace cuw3 {
 
 
         FastArena* arena{};
+    };
+
+
+    struct FastArenaAllocatorConfig {
+        uint64 min_arena_size{};
+        uint64 max_arena_size{};
+
+        uint64 min_lookup_bin_pow2{};
+        uint64 max_lookup_bin_pow2{};
+    };
+
+    struct FastArenaAllocation {
+
+    };
+
+    struct FastArenaBins {
+        using FastArenaBinListEntry = DefaultListEntry;
+        using FastArenaBinListOps = DefaultListOps<FastArenaBinListEntry>;
+
+        struct FastArenaBin {
+            FastArenaBinListEntry list_head{};
+        };
+
+        static constexpr gsize align_axis = conf_max_fast_arenas;
+        static constexpr gsize lookup_step_axis = conf_max_fast_arena_lookup_steps;
+        static constexpr gsize lookup_split_axis = conf_max_fast_arena_lookup_split;
+        
+        using FastArenaBitmap = Bitmap<gsize, lookup_split_axis>;
+
+        struct FastArenaLocation {
+            uint32 step{};
+            uint32 split{};
+        };
+
+        uint64 locate_alignment(uint64 alignment) {
+            uint64 alignment_log2 = intlog2(alignment);
+            CUW3_ASSERT(alignment_log2 <= max_arena_alignment_log2, "cannot satisfy alignment request");
+
+            alignment_log2 = std::max(alignment_log2, min_arena_alignment_log2);
+            return alignment_log2 - min_arena_alignment_log2;
+        }
+
+        // size must be aligned beforehand if required
+        FastArenaLocation locate_arena_bin(uint64 size) {
+            uint64 step_size_log2 = std::min(intlog2(size), max_arena_step_size_log2);
+
+            uint64 step = 0;
+            uint64 split_size_base = 0;
+            uint64 split_size_log2 = 0;
+            if (step_size_log2 < min_arena_step_size_log2) {
+                step = 0;
+                split_size_base = 0;
+                split_size_log2 = min_arena_step_size_log2;
+            } else {
+                step = step_size_log2 - min_arena_step_size_log2 + 1;
+                split_size_base = intpow2(step_size_log2);
+                split_size_log2 = step_size_log2;
+            }
+
+            uint64 split = std::min(divpow2(mulpow2(size - split_size_base, num_splits_log2), split_size_log2), num_splits);
+            return {(uint32)step, (uint32)split,};
+        }
+
+        FastArenaLocation locate_empty_arena_bin() {
+            return {};
+        }
+
+        FastArenaLocation locate_last_bin() {
+            return {(uint32)num_steps, (uint32)num_splits};
+        }
+
+        void add_arena(const FastArenaConfig& config, uint64 alignment) {
+            uint64 alignment_log2 = intlog2(alignment);
+
+            auto fast_arena = FastArenaView::create_fast_arena(config);
+            // TODO
+        }
+
+        FastArenaBin fast_arena_bins[align_axis][lookup_step_axis + 1][lookup_split_axis + 1] = {};
+        FastArenaBitmap fast_arena_bitmaps[align_axis][lookup_step_axis + 1] = {};
+
+        FastArenaBin free_arenas[align_axis] = {};
+        FastArena* curr_arena[align_axis] = {};
+
+        uint64 num_alignments{};
+        uint64 num_steps{};
+        uint64 num_splits{};
+        uint64 num_splits_log2{};
+
+        //uint64 min_arena_step_size{};
+        uint64 min_arena_step_size_log2{};
+        //uint64 max_arena_step_size{};
+        uint64 max_arena_step_size_log2{};
+
+        uint64 min_arena_alignment_log2{};
+        uint64 max_arena_alignment_log2{};
+    };
+
+    struct FastArenaAllocator {
+        struct alignas(conf_cacheline) RetiredArenasRoot {
+            RetireReclaimEntry entry{};
+        };
+
+        RetiredArenasRoot retired_arenas_root{};
+        FastArenaBins fast_arena_bins{};
+        FastArena* curr_arena{};
     };
 }

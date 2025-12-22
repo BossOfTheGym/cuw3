@@ -8,6 +8,7 @@
 #include "backoff.hpp"
 #include "region_chunk_handle.hpp"
 
+// TODO : maybe unite specs & pools & state
 namespace cuw3 {
     inline constexpr uint32 region_chunk_allocator_null_value = 0xFFFFFFFF;
     inline constexpr uint32 region_chunk_allocator_failed_value = 0xFFFFFFFF;

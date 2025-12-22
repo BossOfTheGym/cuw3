@@ -91,6 +91,12 @@ namespace cuw3 {
         return (value + alignment - 1) & -alignment;
     }
 
+    template<Integer T, Integer U>
+    constexpr auto align_down(T value, U alignment) {
+        CUW3_ASSERT(is_alignment(alignment), "not alignment");
+        return value & -alignment;
+    }
+
     template<class T, Integer U>
     constexpr auto align(T* value, U alignment) {
         CUW3_ASSERT(is_alignment(alignment), "not alignment");
