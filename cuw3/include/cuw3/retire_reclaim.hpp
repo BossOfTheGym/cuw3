@@ -2,6 +2,7 @@
 
 #include <atomic>
 
+#include "cuw3/funcs.hpp"
 #include "ptr.hpp"
 #include "assert.hpp"
 
@@ -222,6 +223,7 @@ namespace cuw3 {
         int32 base_offset{};
     };
 
+    // type 0 is resreved
     struct RetireReclaimEntryView {
         [[nodiscard]] static RetireReclaimEntryView create(void* location, RetireReclaimRawPtr initial_flags, uint32 type_label = 0, int32 base_offset = 0) {
             auto* entry = new (location) RetireReclaimEntry{};

@@ -20,35 +20,34 @@ namespace cuw3 {
 
     // TODO : 'pool shard pool' sounds fucking retarded
     // I wanted it to mean something like 'pool of chunk pools'
-    // maybe I should name it something like that...
+    // maybe I should name it something like that... or maybe just shard pool
 
     // NOTE: shard memory can be restored using shard handle
-    struct PoolShardPool {
+    struct alignas(conf_cacheline) PoolShardPool {
         static PoolShardPool* list_entry_to_shard_pool(PoolShardPoolListEntry* list_entry) {
             return cuw3_field_to_obj(list_entry, PoolShardPool, list_entry);
         }
 
-        struct alignas(conf_cacheline) {
-            RegionChunkHandleHeader region_chunk_header{};
-            PoolShardPoolListEntry list_entry{};
+        // cacheline 0
+        RegionChunkHandleHeader region_chunk_header{};
+        PoolShardPoolListEntry list_entry{};
 
-            struct {
-                uint32 top{};
-                uint32 head{};
-                uint32 count{};
-                uint32 capacity{};
-            } shard_pool;
+        struct {
+            uint32 top{};
+            uint32 head{};
+            uint32 count{};
+            uint32 capacity{};
+        } shard_pool;
 
-            uint32 pool_shard_size_log2{};
-            uint32 shard_pool_memory_size{}; // can also be determined externally but let it just rest here
+        uint32 pool_shard_size_log2{};
+        uint32 shard_pool_memory_size{}; // can also be determined externally but let it just rest here
 
-            void* shard_pool_handles{}; // passed externally
-            void* shard_pool_memory{}; // region chunk
-        };
+        alignas(8) void* shard_pool_handles{}; // passed externally
+        alignas(8) void* shard_pool_memory{}; // region chunk
 
-        struct alignas(conf_cacheline) {
-            RetireReclaimEntry retire_reclaim_entry{};
-        };
+        // cacheline 1
+        RetireReclaimEntry retire_reclaim_entry{};
+        uint64 pad1[4] = {};
     };
 
     static_assert(sizeof(PoolShardPool) <= conf_control_block_size, "pack struct field better or increase size of the control block");
@@ -66,34 +65,34 @@ namespace cuw3 {
     static_assert(sizeof(ChunkPoolHeader) <= conf_min_alloc_size, "we cannot guarantee enough space for chunk to be reired");
 
     // chunk pool is subresource of shard pool, we dont need to store reference to the shard pool here
-    struct ChunkPool {
+    struct alignas(conf_cacheline) ChunkPool {
         static ChunkPool* list_entry_to_chunk_pool(ChunkPoolListEntry* list_entry) {
             return cuw3_field_to_obj(list_entry, ChunkPool, list_entry);
         }
 
-        struct alignas(conf_cacheline) {
-            ChunkPoolListEntry list_entry{};
+        // cacheline 0
+        ChunkPoolListEntry list_entry{};
 
-            struct {
-                uint32 top{};
-                uint32 head{};
-                uint32 count{};
-                uint32 capacity{};
-            } chunk_pool;
+        struct {
+            uint32 top{};
+            uint32 head{};
+            uint32 count{};
+            uint32 capacity{};
+        } chunk_pool;
 
-            uint32 bin_index{};
+        uint32 bin_index{};
+        uint32 pad{};
 
-            uint32 chunks_memory_size{};
-            uint32 chunk_alignment{};
-            uint32 chunk_size{};
-            uint32 chunk_size_log2{};
+        uint32 chunks_memory_size{};
+        uint32 chunk_alignment{};
+        uint32 chunk_size{};
+        uint32 chunk_size_log2{};
 
-            void* chunks_memory{};
-        };
+        alignas(8) void* chunks_memory{};
 
-        struct alignas(conf_cacheline) {
-            RetireReclaimEntry retire_reclaim_entry{};
-        };
+        // cacheline 1
+        RetireReclaimEntry retire_reclaim_entry{};
+        uint64 pad1[4] = {};
     };
 
     static_assert(sizeof(ChunkPool) <= conf_control_block_size, "pack struct field better or increase size of the control block");
@@ -306,7 +305,7 @@ namespace cuw3 {
 
         uint32 chunk_size{};
         uint32 chunk_alignment{};
-        uint32 bin_index{}; // little hint facilitating chunk pool bin location, intrusive but useful
+        uint32 bin_index{}; // little hint facilitating chunk pool bin location, intrusive but useful TODO: ?????
 
         RetireReclaimRawPtr retire_reclaim_flags{};
     };
@@ -338,7 +337,7 @@ namespace cuw3 {
             pool->chunk_pool.head = pool->chunk_pool.capacity;
 
             // type can be null here as there are no other entry types
-            RetireReclaimEntryView::create(&pool->retire_reclaim_entry, config.retire_reclaim_flags, 0, offsetof(ChunkPool, retire_reclaim_entry));
+            (void)RetireReclaimEntryView::create(&pool->retire_reclaim_entry, config.retire_reclaim_flags, 0, offsetof(ChunkPool, retire_reclaim_entry));
             return {pool};
         }
 
@@ -428,4 +427,6 @@ namespace cuw3 {
 
         ChunkPool* pool{};
     };
+
+
 }

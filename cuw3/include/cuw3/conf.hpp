@@ -88,6 +88,6 @@ namespace cuw3 {
 
     static_assert(conf_num_fast_arenas <= conf_max_fast_arenas, "num of fast arenas exceeds max capacity");
     
-    inline constexpr uint64 conf_max_fast_arena_lookup_split = 64;
+    inline constexpr uint64 conf_max_fast_arena_lookup_split = 128;
     inline constexpr uint64 conf_max_fast_arena_lookup_steps = 8; // TODO : proper name
 }

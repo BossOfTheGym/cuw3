@@ -58,6 +58,11 @@ namespace cuw3 {
     }
 
     template<class NodeRef, class ListOps>
+    void list_reset(NodeRef node, ListOps&& ops) {
+        list_init(node, ops);
+    }
+
+    template<class NodeRef, class ListOps>
     auto list_prev(NodeRef node, ListOps&& ops) {
         return ops.get_prev(node);
     }
@@ -138,6 +143,28 @@ namespace cuw3 {
         auto popped = ops.get_prev(list);
         list_erase(popped, ops);
         return popped;
+    }
+
+    template<class NodeRef, class ListOps>
+    void list_insert_chain_after(NodeRef node, NodeRef chain, ListOps&& ops) {
+        if (list_empty(chain, ops)) {
+            return;
+        }
+
+        auto chain_head = ops.get_next(chain);
+        auto chain_tail = ops.get_prev(chain);
+        auto node_next = ops.get_next(node);
+        ops.set_next(node, chain_head);
+        ops.set_prev(chain_head, node);
+        ops.set_next(chain_tail, node_next);
+        ops.set_prev(node_next, chain_tail);
+        
+        list_reset(chain);
+    }
+
+    template<class NodeRef, class ListOps>
+    void list_insert_chain_before(NodeRef node, NodeRef chain, ListOps&& ops) {
+        list_insert_chain_before(list_prev(node), chain, ops);
     }
 
     struct DefaultListEntry {

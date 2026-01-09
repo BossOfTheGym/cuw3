@@ -116,7 +116,7 @@ namespace cuw3 {
     }
 
     enum class RegionChunkType : uint32 {
-        PoolShardPool,
+        PoolShardPool = 1,
         FastArena,
     };
 

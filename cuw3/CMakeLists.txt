@@ -15,7 +15,7 @@ set(CUW3_LIB_HEADERS
     include/cuw3/retire_reclaim.hpp
     include/cuw3/thread_graveyard.hpp
     include/cuw3/thread_local_allocator.hpp
-    include/cuw3/typedef.hpp
+    include/cuw3/typedefs.hpp
     include/cuw3/utils.hpp
     include/cuw3/vmem.hpp
 )

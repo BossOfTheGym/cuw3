@@ -14,6 +14,8 @@ namespace cuw3 {
     inline constexpr uint32 region_chunk_allocator_failed_value = 0xFFFFFFFF;
 
     struct RegionChunkAllocatorSpecsConfig {
+        void* memory{}; // TODO : memory size
+
         const uint64* region_sizes{};
         uint64 num_region_sizes{};
         
@@ -53,18 +55,19 @@ namespace cuw3 {
     // this is a read-only data structure
     struct RegionChunkAllocatorSpecs {
         // not an error if some region has zero chunks (region size is less than size of a single chunk)
-        static bool init(RegionChunkAllocatorSpecs* specs, const RegionChunkAllocatorSpecsConfig& config) {
-            CUW3_ALERT_RETURN_VAL(!specs, false);
-            CUW3_ALERT_RETURN_VAL(config.num_region_sizes == 0 || config.num_region_sizes > conf_max_region_sizes, false);
-            CUW3_ALERT_RETURN_VAL(config.num_region_sizes != config.num_region_chunk_sizes, false);
-            CUW3_ALERT_RETURN_VAL(!is_pow2(config.handle_size), false);
-            CUW3_ALERT_RETURN_VAL(!is_alignment(config.region_storage_alignment), false);
-            CUW3_ALERT_RETURN_VAL(!is_alignment(config.handle_storage_alignment), false);
+        [[nodiscard]] static RegionChunkAllocatorSpecs* create(const RegionChunkAllocatorSpecsConfig& config) {
+            CUW3_CHECK_RETURN_VAL(config.memory, nullptr, "memory was null");
+            CUW3_CHECK_RETURN_VAL(0 < config.num_region_sizes && config.num_region_sizes <= conf_max_region_sizes, nullptr, "invalid number of regions");
+            CUW3_CHECK_RETURN_VAL(config.num_region_sizes == config.num_region_chunk_sizes, nullptr, "num of regions and num of region chunk sizes mismatch");
+            CUW3_CHECK_RETURN_VAL(is_pow2(config.handle_size), nullptr, "handle_size mut be power of 2");
+            CUW3_CHECK_RETURN_VAL(is_alignment(config.region_storage_alignment), nullptr, "invalid alignment value for region_storage");
+            CUW3_CHECK_RETURN_VAL(is_alignment(config.handle_storage_alignment), nullptr, "invalid handle storage alignment");
 
             bool all_region_sizes_equal = all_equal(config.region_sizes, config.region_sizes + config.num_region_sizes);
             uint64 region_size = all_region_sizes_equal ? align(intpow2(config.region_sizes[0]), config.region_storage_alignment) : 0;
             uint64 region_size_log2 = all_region_sizes_equal ? pow2log2(region_size) : 0;
 
+            auto* specs = new (config.memory) RegionChunkAllocatorSpecs{};
             specs->region_alignment = config.region_storage_alignment;
             specs->region_size = region_size;
             specs->region_size_log2 = region_size_log2;
@@ -99,13 +102,7 @@ namespace cuw3 {
             specs->total_regions_size = region_offset;
             specs->total_handles_size = align(mulpow2(handle_offset, specs->handle_size_log2), specs->handle_alignment);
             specs->num_handles = handle_offset;
-
-            return true;
-        }
-
-        static bool initz(RegionChunkAllocatorSpecs* specs, const RegionChunkAllocatorSpecsConfig& config) {
-            *specs = {};
-            return init(specs, config);
+            return specs;
         }
 
 
@@ -212,18 +209,22 @@ namespace cuw3 {
     };
 
     struct RegionChunkAllocatorPoolsConfig {
+        void* memory{};
+        // TODO : memory size
+
         const RegionChunkAllocatorSpecs* allocator_specs{};
         uint64 contention_split{};
     };
 
     struct RegionChunkAllocatorPools {
-        static bool init(RegionChunkAllocatorPools* pools, const RegionChunkAllocatorPoolsConfig& config) {
-            CUW3_ALERT_RETURN_VAL(config.contention_split > conf_max_contention_split, false);
-            CUW3_ALERT_RETURN_VAL(!is_pow2(config.contention_split), false);
+        [[nodiscard]] static RegionChunkAllocatorPools* create(const RegionChunkAllocatorPoolsConfig& config) {
+            CUW3_CHECK_RETURN_VAL(config.contention_split <= conf_max_contention_split, nullptr, "invalid value of contention split");
+            CUW3_CHECK_RETURN_VAL(is_pow2(config.contention_split), nullptr, "");
 
             const RegionChunkAllocatorSpecs* specs = config.allocator_specs;
             uint64 contention_split = config.contention_split ? config.contention_split : 1;
 
+            auto* pools = new (config.memory) RegionChunkAllocatorPools{};
             pools->contention_split = contention_split;
 
             // this will initialize all not used entries as well
@@ -244,13 +245,9 @@ namespace cuw3 {
                     pools->split_search_sentinels[pool][split] = last_handle;
                 }
             }
-            return true;
+            return pools;
         }
 
-        static bool initz(RegionChunkAllocatorPools* pools, const RegionChunkAllocatorPoolsConfig& config) {
-            *pools = {};
-            return init(pools, config);
-        }
 
         // step = 0 used to initialize start value only so beware
         uint32 next_split(uint32 split, uint32 step = 0) {
@@ -285,41 +282,6 @@ namespace cuw3 {
         uint64 contention_split{}; // readonly, power of 2
     };
 
-    struct RegionAllocatorStateConfig {
-        const RegionChunkAllocatorPoolsConfig* pools_config{};
-        void* regions{};
-        void* handles{};
-    };
-
-    // NOTE : we can add here cache that will store some retired region chunks
-    //   so we can fastly store them there without decommitting memory
-    //   and we can fastly acquire them from there without committing memory
-    // NOTE : we can commit them not all at once but sequentially when needed
-    // this is commonly a global shared entity
-    struct RegionChunkAllocatorState {
-        static bool init(RegionChunkAllocatorState* state, const RegionAllocatorStateConfig& config) {
-            CUW3_ALERT_RETURN_VAL(!config.pools_config, false);
-            CUW3_ALERT_RETURN_VAL(!config.regions, false);
-            CUW3_ALERT_RETURN_VAL(!config.handles, false);
-
-            if (!RegionChunkAllocatorPools::init(&state->pools, *config.pools_config)) {
-                return false;
-            }
-            state->regions = config.regions;
-            state->handles = config.handles;
-            return true;
-        }
-
-        static bool initz(RegionChunkAllocatorState* state, const RegionAllocatorStateConfig& config) {
-            *state = {};
-            return init(state, config);
-        }
-
-        RegionChunkAllocatorPools pools{};
-
-        void* regions{};
-        void* handles{};
-    };
 
     using RegionChunkAllocatorBackoff = SimpleBackoff;
 
@@ -369,31 +331,52 @@ namespace cuw3 {
         void* handle{};
     };
 
-    struct RegionAllocatorView {
-        struct NodeOps {
-            NodeOps(RegionAllocatorView* view) : specs{view->specs}, state{view->state} {}
+    struct RegionAllocatorConfig {
+        void* memory{}; // TODO : memory size
 
+        const RegionChunkAllocatorSpecs* specs{};
+        RegionChunkAllocatorPools* pools{};
+        void* regions{}; // TODO : memory size
+        void* handles{}; // TODO : memory size
+    };
+
+    // NOTE : we can add here cache that will store some retired region chunks
+    //   so we can fastly store them there without decommitting memory
+    //   and we can fastly acquire them from there without committing memory
+    // NOTE : we can commit them not all at once but sequentially when needed
+    // this is commonly a global shared entity
+    struct RegionAllocator {
+        struct NodeOps {
             RegionChunkHandleHeader* get_handle(RegionChunkPoolLinkType node) {
-                return (RegionChunkHandleHeader*)advance_arr_log2(state->handles, specs->handle_size_log2, node);
+                return (RegionChunkHandleHeader*)advance_arr_log2(alloc->handles, alloc->specs->handle_size_log2, node);
             }
 
             // exclusive modification here while we attempt to push it back into the list
             void set_next(RegionChunkPoolLinkType node, RegionChunkPoolLinkType next) {
-                CUW3_ASSERT(node < specs->num_handles, "invalid link value 'node' passed");
-                CUW3_ASSERT(next < specs->num_handles || next == region_chunk_pool_null_link, "invalid link value 'next' passed");
+                CUW3_ASSERT(node < alloc->specs->num_handles, "invalid link value 'node' passed");
+                CUW3_ASSERT(next < alloc->specs->num_handles || next == region_chunk_pool_null_link, "invalid link value 'next' passed");
 
                 RegionChunkHandleHeaderView{get_handle(node)}.set_next_chunk(next);
             }
 
             RegionChunkPoolLinkType get_next(RegionChunkPoolLinkType node) {
-                CUW3_ASSERT(node < specs->num_handles, "invalid node handle passed");
+                CUW3_ASSERT(node < alloc->specs->num_handles, "invalid node handle passed");
 
                 return RegionChunkHandleHeaderView{get_handle(node)}.get_next_chunk();
             }
 
-            const RegionChunkAllocatorSpecs* specs{};
-            RegionChunkAllocatorState* state{};
+            RegionAllocator* alloc{};
         };
+
+
+        [[nodiscard]] static RegionAllocator* create(const RegionAllocatorConfig& config) {
+            auto* alloc = new (config.memory) RegionAllocator{};
+            alloc->specs = config.specs;
+            alloc->pools = config.pools;
+            alloc->regions = config.regions;
+            alloc->handles = config.handles;
+            return alloc;
+        }
 
 
         uint32 _region_handle_to_chunk(uint32 region, uint32 handle) {
@@ -411,8 +394,8 @@ namespace cuw3 {
             uint32 chunk = handle - _region_handle_to_chunk(region, handle);
             
             auto& region_specs = specs->region_specs[region];
-            void* chunk_memory = advance_arr_log2(advance_ptr(state->regions, region_specs.region_offset), region_specs.chunk_size_log2, chunk);
-            void* handle_memory = advance_arr_log2(state->handles, specs->handle_size_log2, handle);
+            void* chunk_memory = advance_arr_log2(advance_ptr(regions, region_specs.region_offset), region_specs.chunk_size_log2, chunk);
+            void* handle_memory = advance_arr_log2(handles, specs->handle_size_log2, handle);
             return {chunk_memory, handle_memory};
         }
 
@@ -420,9 +403,8 @@ namespace cuw3 {
             CUW3_ASSERT(region < specs->num_regions, "invalid region value");
 
             bool chunk_seen = false;
-            auto& pools = state->pools;
-            for (uint k = 0, split = pools.next_split(alloc_params.split_start); k < pools.contention_split; split = pools.next_split(split, alloc_params.split_step)) {
-                auto& pool_entry = state->pools.pool_entries[region][split];
+            for (uint k = 0, split = pools->next_split(alloc_params.split_start); k < pools->contention_split; split = pools->next_split(split, alloc_params.split_step)) {
+                auto& pool_entry = pools->pool_entries[region][split];
 
                 auto list_view = RegionChunkPoolListView{&pool_entry.free_list};
                 uint32 handle = list_view.pop(alloc_params.attempts, RegionChunkAllocatorBackoff{}, NodeOps{this});
@@ -452,13 +434,13 @@ namespace cuw3 {
         
         void _deallocate_chunk(RegionChunkAllocation location) {
             CUW3_ASSERT(location.region < specs->num_regions, "invalid region value");
-            CUW3_ASSERT(location.split < state->pools.contention_split, "invalid split value");
+            CUW3_ASSERT(location.split < pools->contention_split, "invalid split value");
 
             auto& region_specs = specs->region_specs[location.region];
             CUW3_ASSERT(location.chunk < region_specs.num_handles, "invalid chunk value");
             CUW3_ASSERT(region_specs.handle_offset <= location.handle && location.handle < region_specs.handle_offset + region_specs.num_handles, "invalid handle value");
 
-            auto& pool_entry = state->pools.pool_entries[location.region][location.split];
+            auto& pool_entry = pools->pool_entries[location.region][location.split];
             auto list_view = RegionChunkPoolListView{&pool_entry.free_list};
             list_view.push(location.handle, RegionChunkAllocatorBackoff{}, NodeOps{this});
         }
@@ -466,30 +448,30 @@ namespace cuw3 {
         
         // API
         bool belongs_any_region(void* ptr) const {
-            return state->regions <= ptr && ptr < advance_ptr(state->regions, specs->total_regions_size);
+            return regions <= ptr && ptr < advance_ptr(regions, specs->total_regions_size);
         }
 
         [[nodiscard]] uint32 index_from_handle(void* handle) {
-            if (handle < state->handles || handle >= advance_ptr(state->handles, specs->total_handles_size)) {
+            if (handle < handles || handle >= advance_ptr(handles, specs->total_handles_size)) {
                 return region_chunk_allocator_null_value;
             }
             if (!is_aligned(handle, specs->handle_size)) {
                 return region_chunk_allocator_null_value;
             }
-            return divpow2(subptr(handle, state->handles), specs->handle_size_log2);
+            return divpow2(subptr(handle, handles), specs->handle_size_log2);
         }
 
         [[nodiscard]] void* handle_from_index(uint32 index) {
             if (index >= specs->num_handles) {
                 return nullptr;
             }
-            return advance_arr_log2(state->handles, specs->handle_size_log2, index);
+            return advance_arr_log2(handles, specs->handle_size_log2, index);
         }
 
         [[nodiscard]] RegionChunkMemory region_data_to_memory_no_check(uint32 region, uint32 chunk, uint32 handle) {
             auto& region_specs = specs->region_specs[region];
-            void* chunk_mem = advance_arr_log2(advance_ptr(state->regions, region_specs.region_offset), region_specs.chunk_size_log2, chunk);
-            void* handle_mem = advance_arr_log2(state->handles, specs->handle_size_log2, handle);
+            void* chunk_mem = advance_arr_log2(advance_ptr(regions, region_specs.region_offset), region_specs.chunk_size_log2, chunk);
+            void* handle_mem = advance_arr_log2(handles, specs->handle_size_log2, handle);
             return {chunk_mem, handle_mem};
         }
 
@@ -519,7 +501,7 @@ namespace cuw3 {
             if (!belongs_any_region(ptr)) {
                 return {};
             }
-            return specs->locate_chunk(subptr(ptr, state->regions));
+            return specs->locate_chunk(subptr(ptr, regions));
         }
 
         [[nodiscard]] RegionChunkAllocation ptr_to_allocation(void* ptr) {
@@ -527,7 +509,7 @@ namespace cuw3 {
             if (!location) {
                 return {region_chunk_allocator_null_value};
             }
-            uint32 split = state->pools.search_pool_split(location.region, location.handle);
+            uint32 split = pools->search_pool_split(location.region, location.handle);
             CUW3_CHECK(split != region_chunk_allocator_null_value, "invalid split value");
             return {location.region, location.chunk, location.handle, split};
         }
@@ -567,6 +549,8 @@ namespace cuw3 {
         // void deallocate_chunk_chain(...) {}
 
         const RegionChunkAllocatorSpecs* specs{};
-        RegionChunkAllocatorState* state{};
+        RegionChunkAllocatorPools* pools{};
+        void* regions{};
+        void* handles{};
     };
 }

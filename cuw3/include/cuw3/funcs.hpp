@@ -8,6 +8,7 @@
 #include <functional>
 #include <type_traits>
 
+#include "cuw3/typedefs.hpp"
 #include "defs.hpp"
 #include "assert.hpp"
 
@@ -103,9 +104,54 @@ namespace cuw3 {
         return (T*)align((uintptr)value, alignment);
     }
 
+
     template<Integer T>
     constexpr T bitsize() {
         return sizeof(T) * (T)8;
+    }
+
+    template<UnsignedInteger T>
+    constexpr T bitmask(T first_bit, T last_bit) {
+        T head = first_bit;
+        T tail = bitsize<T>() - last_bit;
+        T all = ~(T)0;
+        T mask = all >> head << head << tail >> tail;
+        return mask;
+    }
+
+    template<UnsignedInteger T>
+    constexpr T bitmask_all() {
+        return ~(T)0;
+    }
+
+    template<UnsignedInteger T>
+    constexpr T bitmask_inv(T first_bit, T last_bit) {
+        return ~bitmask(first_bit, last_bit);
+    }
+
+    template<UnsignedInteger T>
+    constexpr T bitmask_bit(T bit) {
+        return (T)1 << bit;
+    }
+
+    template<UnsignedInteger T>
+    constexpr T bitmask_set(T mask, T bit) {
+        return mask | bitmask_bit(bit);
+    }
+
+    template<UnsignedInteger T>
+    constexpr T bitmask_unset(T mask, T bit) {
+        return mask & ~bitmask_bit(bit);
+    }
+
+    template<UnsignedInteger T>
+    constexpr bool bitmask_all_set(T mask) {
+        return !(~mask);
+    }
+
+    template<UnsignedInteger T>
+    constexpr bool bitmask_any_set(T mask) {
+        return mask;
     }
 
 
@@ -170,8 +216,12 @@ namespace cuw3 {
 
     template<class Object, class Field>
     Object* field_to_obj(Field* field, ptrdiff offset) {
-        CUW3_ASSERT(field, "field must not be zero.");
-        return (Object*)advance_ptr(field, -offset);
+        using Void = SameConstAs<Field, void>;
+
+        if (!field) {
+            return nullptr;
+        }
+        return (Object*)advance_ptr((Void*)field, -offset);
     }
 
     #define cuw3_field_to_obj(field_ptr, Object, field_name) field_to_obj<Object>((field_ptr), (ptrdiff)offsetof(Object, field_name))
