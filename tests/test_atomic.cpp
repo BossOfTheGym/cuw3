@@ -33,7 +33,7 @@ auto dispatch(std::vector<std::function<Ret()>>&& functions) {
     }
 }
 
-void test_atomic_stack() {
+void test_dispatch() {
     std::vector<std::function<int()>> functions_int{};
     for (int i = 0; i < 16; i++) {
         functions_int.push_back([i] () {
@@ -41,7 +41,8 @@ void test_atomic_stack() {
         });
     }
     auto results = dispatch(std::move(functions_int));
-    for (auto result : results) {
+    for (auto result :
+ results) {
         std::cout << result << " ";
     }
     std::cout << std::endl;
@@ -55,7 +56,48 @@ void test_atomic_stack() {
     dispatch(std::move(functions_void));
 }
 
+namespace atomic_list_tests {
+    using ListLinkType = uint64;
+
+    struct ListDataNode {
+        ListLinkType next{};
+        uint64 data{};
+    };
+
+    struct ListTraits {
+        using LinkType = ListLinkType;
+
+        struct ListHead {
+            LinkType version : 32{}, next : 32{};
+        };
+
+        static constexpr LinkType null_link = 0xFFFFFFFF;
+        static constexpr LinkType op_failed = 0xFFFFFFFE;
+    };
+
+    struct ListNodeOps {
+        void set_next(ListLinkType node, ListLinkType next) {
+
+        }
+
+        ListLinkType get_next(ListLinkType node) {
+
+        }
+
+        ListDataNode* nodes{};
+        uint64 num_nodes{};
+    };
+
+    void test_atomic_list_st() {
+        // TODO
+    }
+
+    void test_atomic_list_mt() {
+        // TODO
+    }
+}
+
 int main() {
-    test_atomic_stack();
+    test_dispatch();
     return 0;
 }

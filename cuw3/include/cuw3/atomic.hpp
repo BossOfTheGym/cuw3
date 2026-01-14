@@ -51,7 +51,7 @@ namespace cuw3 {
                 std::atomic_ref{nodes[node].next}.store(next, std::memory_order_relaxed);
             }
         
-            uint64 get_next(ExampleLinkType node) {
+            ExampleLinkType get_next(ExampleLinkType node) {
                 return std::atomic_ref{nodes[node].next}.load(std::memory_order_relaxed);
             }
         
