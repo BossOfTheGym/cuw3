@@ -73,6 +73,7 @@ namespace cuw3 {
         static constexpr LinkType null_link = Traits::null_link;
         static constexpr LinkType op_failed = Traits::op_failed;
 
+        // TODO : maybe I should put an assertion or check to test node value?
         template<class Backoff, class NodeOps>
         bool push(int attempts, LinkType node, Backoff&& backoff, NodeOps&& node_ops) {
             auto head_ref = std::atomic_ref{*head};
