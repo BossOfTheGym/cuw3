@@ -49,9 +49,9 @@ namespace cuw3 {
         void* arena_handle{};
         void* arena_memory{};
 
-        uint32 arena_handle_size{};
-        uint32 arena_alignment{};
-        uint32 arena_memory_size{};
+        uint64 arena_handle_size{};
+        uint64 arena_alignment{};
+        uint64 arena_memory_size{};
 
         RetireReclaimRawPtr retire_reclaim_flags{};
     };
@@ -103,12 +103,21 @@ namespace cuw3 {
             return advance_ptr(arena->arena_memory, old_top);
         }
 
-        void release(uint64 size) {
-            release_aligned(align(size, arena->arena_alignment));
+        // TODO : rework release logic
+        void release_unchecked(uint64 size) {
+            release(arena->arena_memory, size);
         }
 
-        void release_aligned(uint64 size) {
+        // TODO : rework release logic
+        void release(void* memory, uint64 size) {
+            release_aligned(memory, align(size, arena->arena_alignment));
+        }
+
+        // TODO : rework release logic
+        void release_aligned(void* memory, uint64 size) {
+            // TODO : maybe switch to check-n-return?
             CUW3_ASSERT(is_aligned(size, alignment()), "size is not aligned");
+            CUW3_ASSERT(has_memory_range(memory, size), "memory does not belong to the arena");
 
             uint64 new_freed = arena->freed + size;
             CUW3_CHECK(new_freed <= arena->arena_memory_size, "we have freed more than allocated");
@@ -121,8 +130,30 @@ namespace cuw3 {
             arena->freed = 0;
         }
 
+        bool has_memory_range(void* memory, uint64 size) {
+            auto mem_val = (uintptr)memory;
+            auto arena_start = (uintptr)arena->arena_memory;
+            auto arena_stop = arena_start + arena->arena_memory_size;
+            return arena_start <= mem_val && mem_val + size <= arena_stop;
+        }
+
         bool resettable() const {
             return arena->freed == arena->top;
+        }
+
+        bool empty() const {
+            return arena->top == 0;
+        }
+
+        bool full() const {
+            return arena->top == arena->arena_memory_size;
+        }
+
+        bool can_allocate(uint64 size) const {
+            uint64 rem = remaining();
+            CUW3_ASSERT(is_aligned(rem, arena->arena_alignment), "arena internal state misalignment");
+
+            return rem >= align(size, arena->arena_alignment);
         }
 
         uint64 remaining() const {
@@ -139,14 +170,9 @@ namespace cuw3 {
             return &arena->list_entry;
         }
 
-        bool can_allocate(uint64 size) const {
-            uint64 rem = remaining();
-            CUW3_ASSERT(is_aligned(rem, arena->arena_alignment), "arena internal state misalignment");
+        [[nodiscard]] RetireReclaimPtr retire_allocation(void* memory, uint64 size) {
+            CUW3_ASSERT(has_memory_range(memory, size), "invalid memory range to retire");
 
-            return rem >= align(size, arena->arena_alignment);
-        }
-
-        [[nodiscard]] RetireReclaimPtr retire_allocation(uint64 size) {
             auto retire_reclaim_entry_view = RetireReclaimPtrView{&arena->retire_reclaim_entry.head};
             return retire_reclaim_entry_view.retire_data(size, FastArenaBackoff{});
         }
@@ -154,7 +180,7 @@ namespace cuw3 {
         void reclaim_allocations() {
             auto retire_reclaim_entry_view = RetireReclaimPtrView{&arena->retire_reclaim_entry.head};
             RetireReclaimPtr reclaimed = retire_reclaim_entry_view.reclaim();
-            release(reclaimed.value_shifted());
+            release_unchecked(reclaimed.value_shifted());
         }
 
 
@@ -437,12 +463,12 @@ namespace cuw3 {
 
         // arena is in the data structure (either cached or in the bins)
         // returns arena if it has become empty
-        [[nodiscard]] FastArena* deallocate(FastArena* arena, uint64 size) {
+        [[nodiscard]] FastArena* deallocate(FastArena* arena, void* memory, uint64 size) {
             CUW3_CHECK(arena, "arena was null");
             CUW3_CHECK(size, "size was zero");
 
             auto arena_view = FastArenaView{arena};
-            arena_view.release(size);
+            arena_view.release(memory, size);
             if (!arena_view.resettable()) {
                 return nullptr;
             }
@@ -489,6 +515,26 @@ namespace cuw3 {
         FastArenaBinsConfig bins_config{};
     };
 
+    struct FastArenaReclaimList {
+        FastArena* peek() {
+            return head;
+        }
+
+        [[nodiscard]] FastArena* pop() {
+            CUW3_ASSERT(head, "attempt to pop from empty list");
+
+            auto* arena = head;
+            head = (FastArena*)std::exchange(head->retire_reclaim_entry.next, nullptr);
+            return arena;
+        }
+
+        bool empty() const {
+            return head;
+        }
+
+        FastArena* head{};
+    };
+
     struct FastArenaAllocator {
         struct alignas(conf_cacheline) RetiredArenasRoot {
             RetireReclaimEntry entry{};
@@ -513,6 +559,7 @@ namespace cuw3 {
             return allocator;
         }
 
+
         // acquire arena for allocation, may be null
         [[nodiscard]] FastArena* acquire_arena(uint64 size, uint64 alignment) {
             return fast_arena_bins.acquire_arena(size, alignment);
@@ -524,20 +571,20 @@ namespace cuw3 {
         }
 
         // returns empty arena or null 
-        [[nodiscard]] FastArena* deallocate(FastArena* arena, uint64 size) {
-            return fast_arena_bins.deallocate(arena, size);
+        [[nodiscard]] FastArena* deallocate(FastArena* arena, void* memory, uint64 size) {
+            return fast_arena_bins.deallocate(arena, memory, size);
         }
 
-        // TODO : maybe add wrapper for arena list?
+        // TODO : maybe return flags helper instead? Because
         // called from the non-owning thread
         // puts retired arenas in the list
         // arena pointer is stored as is - no offsetting will be required on reclaim
-        [[nodiscard]] RetireReclaimPtr retire(FastArena* arena, uint64 size) {
+        [[nodiscard]] RetireReclaimPtr retire(FastArena* arena, void* memory, uint64 size) {
             CUW3_ASSERT(arena, "arena was null");
             CUW3_ASSERT(size, "size was zero");
 
             auto arena_view = FastArenaView{arena};
-            auto old_resource = arena_view.retire_allocation(size);
+            auto old_resource = arena_view.retire_allocation(memory, size);
             if (RetireReclaimFlagsHelper{old_resource}.retired()) {
                 return old_resource; // we observed the resource as retired, we cannot proceed
             }
@@ -546,22 +593,22 @@ namespace cuw3 {
             return retired_arenas_view.retire_ptr(arena, FastArenaBackoff{}, FastArenaRetireReclaimResourceOps{});
         }
 
-        // TODO : maybe add wrapper for arena list?
         // called by the owning thread
         // returns list of arenas
-        [[nodiscard]] FastArena* reclaim() {
+        [[nodiscard]] FastArenaReclaimList reclaim() {
             if (retired_arenas.entry.next_postponed) {
-                return (FastArena*)std::exchange(retired_arenas.entry.next_postponed, nullptr);
+                return FastArenaReclaimList{(FastArena*)std::exchange(retired_arenas.entry.next_postponed, nullptr)};
             }
             auto retired_arenas_view = RetireReclaimPtrView{&retired_arenas.entry.head};
-            return retired_arenas_view.reclaim().ptr<FastArena>();
+            return FastArenaReclaimList{retired_arenas_view.reclaim().ptr<FastArena>()};
         }
 
-        // TODO : maybe add wrapper for arena list?
-        void postpone(FastArena* arena_list) {
+        void postpone(FastArenaReclaimList list) {
             CUW3_ASSERT(!retired_arenas.entry.next_postponed, "already postponed");
-            retired_arenas.entry.next_postponed = arena_list;
+
+            retired_arenas.entry.next_postponed = list.head;
         }
+
 
         RetiredArenasRoot retired_arenas{};
         FastArenaBins fast_arena_bins{};

@@ -369,7 +369,7 @@ namespace atomic_list_tests {
         return {job_start, job_stop};
     }
 
-    void test_atomic_list_mt(uint num_nodes, uint num_threads) {
+    void test_atomic_list_mt(uint num_nodes, uint num_threads, uint num_ops) {
         num_nodes += num_threads - 1;
         num_nodes -= num_nodes % num_threads;
 
@@ -384,9 +384,46 @@ namespace atomic_list_tests {
         std::vector<std::function<ThreadResult()>> jobs{};
         for (uint i = 0; i < num_threads; i++) {
             auto job_part = get_job_part(0, num_nodes, num_threads, i);
-            jobs.push_back([thread_id = i, job_part, &list, &prepush] () -> ThreadResult {
-                // TODO
-                return {};
+            jobs.push_back([thread_id = i, job_part, num_ops, &list, &prepush] () -> ThreadResult {
+                ThreadResult result{thread_id};
+                std::minstd_rand rand{std::random_device{}()};
+
+                for (uint i = job_part.start; i < job_part.stop; i++) {
+                    list.push(i);
+                }
+
+                prepush.arrive_and_wait();
+                
+                uint op = 0;
+                while (op < num_ops) {
+                    auto choice = rand() % 2;
+                    if (choice) {
+                        auto node = list.pop();
+                        if (node != list.null_link) {
+                            result.allocated.push_back(node);
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        if (!result.allocated.empty()) {
+                            list.push(result.allocated.back());
+                            result.allocated.pop_back();
+                        } else {
+                            continue;
+                        }
+                    }
+                    op++;
+                }
+
+                while (true) {
+                    auto node = list.pop();
+                    if (node == list.null_link) {
+                        break;
+                    }
+                    result.allocated.push_back(node);
+                }
+
+                return result;
             });
         }
 
@@ -404,7 +441,7 @@ namespace atomic_list_tests {
             allocated.insert(allocated.end(), result.allocated.begin(), result.allocated.end());
         }
         std::sort(allocated.begin(), allocated.end());
-
+        
         // TODO : redundant check
         for (uint i = 1; i < allocated.size(); i++) {
             CUW3_CHECK(allocated[i - 1] < allocated[i], "invariant violation: repeating allocations found");
@@ -416,15 +453,26 @@ namespace atomic_list_tests {
 }
 
 int main() {
+    std::cout << "test dispatch..." << std::endl;
     test_dispatch();
 
+    std::cout << "test_atomic_stack_st..." << std::endl;
     atomic_stack_tests::test_atomic_stack_st(10000);
     for (int i = 0; i < 16; i++) {
+        std::cout << "test_atomic_stack_mt " << i << " ..." << std::endl;
         atomic_stack_tests::test_atomic_stack_mt(10000, 8);
     }
 
+    std::cout << "test_atomic_list_st..." << std::endl;
     atomic_list_tests::test_atomic_list_st(10000);
+    std::cout << "test_atomic_list_st..." << std::endl;
     atomic_list_tests::test_atomic_list_st(10001);
+    for (int i = 0; i < 16; i++) {
+        std::cout << "test_atomic_list_mt " << i << " ..." << std::endl;
+        atomic_list_tests::test_atomic_list_mt(10000, 8, 100000);
+    }
 
+    std::cout << "done!" << std::endl;
+    
     return 0;
 }
