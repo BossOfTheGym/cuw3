@@ -180,31 +180,47 @@ namespace cuw3 {
             Link tail{};
         };
 
+        struct ListTraits {
+            using LinkType = Link;
+            
+            static constexpr LinkType null_link = nullptr;
+        };
+
         struct NodeOps {
-            Link get_tail(Link node) {
+            Link get_tail(Link node) const {
                 return node->tail;
             }
 
-            void set_tail(Link node, Link tail) {
-                node->tail = tail;
+            void set_skip(Link node, Link skip) const {
+                node->skip = skip;
             }
 
-            void reset_tail(Link node) {
-                node->tail = nullptr;
+            void reset_skip(Link node) const {
+                node->skip = nullptr;
             }
 
-            Link get_next(Link node) {
+            Link get_next(Link node) const {
                 return node->next;
             } 
 
-            void set_next(Link node, Link next) {
+            void set_next(Link node, Link next) const {
                 node->next = next;
             }
 
-            void reset_next(Link node) {
+            void reset_next(Link node) const {
                 node->next = nullptr;
             }
         };
+
+        tail invariants
+        node->next == nullptr if it is tail of the list
+        node->skip serves as a hint to the tail
+        if node->next == nullptr then node->skip == node
+
+        def get_skip(node):
+            if node->next != nullptr
+                return node->skip != node ? node->skip : node->next
+            return node;
     */
     template<class AtomicPushSnatchListTraits>
     struct AtomicPushSnatchList {
@@ -213,13 +229,37 @@ namespace cuw3 {
 
         static LinkType constexpr null_link = Traits::null_link;
 
+        template<class NodeOps>
+        static LinkType get_skip(LinkType node, NodeOps&& node_ops) {
+            auto next = node_ops.get_next(node);
+            if (next) {
+                auto skip = node_ops.get_skip(node);
+                return skip != node ? skip : next;
+            }
+            return node;
+        }
+
+        template<class NodeOps>
+        static LinkType get_tail(LinkType list_head, NodeOps&& node_ops) {
+            auto skip = node_ops.get_skip(list_head);
+            while (true) {
+                auto next_skip = node_ops.get_skip(skip);
+                if (skip == next_skip) {
+                    return skip;
+                }
+                skip = next_skip;
+            }
+        }
+
         template<class Backoff, class NodeOps>
         bool push(int attempts, LinkType list_head, Backoff&& backoff, NodeOps&& node_ops) {
             CUW3_ASSERT(list_head != null_link, "list_head must not be null");
 
             auto head_ref = std::atomic_ref{*head};
             auto head_old = head_ref.load(std::memory_order_relaxed);
-            auto list_tail = node_ops.get_tail(list_head);
+            auto list_tail = get_tail(list_head, node_ops);
+
+            node_ops.set_skip(list_head, list_tail); // short-circuit
             for (int attempt = attempts; attempt != 0; attempt -= attempt > 0) {
                 node_ops.set_next(list_tail, head_old);
                 if (head_ref.compare_exchange_strong(head_old, list_head, std::memory_order_acq_rel, std::memory_order_relaxed)) {

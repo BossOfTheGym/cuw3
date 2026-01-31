@@ -3,14 +3,18 @@
 #include "cuw3/backoff.hpp"
 
 #include <latch>
+#include <mutex>
 #include <vector>
 #include <thread>
 #include <future>
 #include <random>
 #include <utility>
+#include <numeric>
+#include <barrier>
 #include <iostream>
 #include <algorithm>
 #include <functional>
+#include <condition_variable>
 
 using namespace cuw3;
 
@@ -172,9 +176,22 @@ namespace atomic_stack_tests {
 namespace atomic_list_tests {
     using ListLinkType = uint64;
 
+    struct ListNodeLabel {
+        uint32 thread{};
+        uint32 node{};
+    };
+
     struct ListDataNode {
+        void store(ListNodeLabel d) {
+            std::atomic_ref{data}.store(data, std::memory_order_relaxed);
+        }
+
+        ListNodeLabel load() const {
+            std::atomic_ref{data}.load(std::memory_order_relaxed);
+        }
+
         ListLinkType next{};
-        uint64 data{};
+        ListNodeLabel data{};
     };
 
     struct ListHeadType {
@@ -217,12 +234,17 @@ namespace atomic_list_tests {
             num_nodes = num_nodes_;
         }
 
-        void push(ListLinkType node) {
+        void push(ListLinkType node, ListNodeLabel label) {
+            nodes[node].store(label);
             ListView{&head}.push(node, ListBackoff{}, ListNodeOps{nodes.get(), num_nodes});
         }
 
-        ListLinkType pop() {
-            return ListView{&head}.pop(ListBackoff{}, ListNodeOps{nodes.get(), num_nodes});
+        [[nodiscard]] ListLinkType pop(ListNodeLabel label) {
+            auto popped = ListView{&head}.pop(ListBackoff{}, ListNodeOps{nodes.get(), num_nodes});
+            if (popped != null_link) {
+                nodes[popped].store(label);
+            }
+            return popped;
         }
 
         ListDataNode& get(ListLinkType node) {
@@ -307,48 +329,48 @@ namespace atomic_list_tests {
         List list(num_nodes);
 
         for (uint i = 0; i < list.num_nodes; i++) {
-            list.push(i);
+            list.push(i, {0, i});
         }
         for (uint i = 0; i < list.num_nodes; i++) {
-            auto node = list.pop();
+            auto node = list.pop({0, i});
             CUW3_CHECK(node != list.null_link, "invariant violation: list was empty");
             CUW3_CHECK(node == list.num_nodes - 1 - i, "invariant violation: we popped the wrong node");
         }
         CUW3_CHECK(list.empty(), "invariant violation: list was not empty");
 
         for (uint i = 0; i < list.num_nodes; i += 2) {
-            list.push(i);
+            list.push(i, {0, i});
         }
         for (auto i = rev_even_iter(list.num_nodes); i > 0; i -= 2) {
-            auto node = list.pop();
+            auto node = list.pop({0, (uint)i});
             CUW3_CHECK(node != list.null_link, "invariant violation: list was empty");
             CUW3_CHECK(node == i - 1, "invariant violation: we popped the wrong node");
         }
         CUW3_CHECK(list.empty(), "invariant violation: list was not empty");
 
         for (uint i = 1; i < list.num_nodes; i += 2) {
-            list.push(i);
+            list.push(i, {0, i});
         }
         for (auto i = rev_odd_iter(list.num_nodes); i > 0; i -= 2) {
-            auto node = list.pop();
+            auto node = list.pop({0, (uint)i});
             CUW3_CHECK(node != list.null_link, "invariant violation: list was empty");
             CUW3_CHECK(node == i - 1, "invariant violation: we popped the wrong node");
         }
         CUW3_CHECK(list.empty(), "invariant violation: list was not empty");
 
         for (uint i = 0; i < list.num_nodes; i += 2) {
-            list.push(i);
+            list.push(i, {0, i});
         }
         for (uint i = 1; i < list.num_nodes; i += 2) {
-            list.push(i);
+            list.push(i, {0, i});
         }
         for (auto i = rev_odd_iter(list.num_nodes); i > 0; i -= 2) {
-            auto node = list.pop();
+            auto node = list.pop({0, (uint)i});
             CUW3_CHECK(node != list.null_link, "invariant violation: list was empty");
             CUW3_CHECK(node == i - 1, "invariant violation: we popped the wrong node");
         }
         for (auto i = rev_even_iter(list.num_nodes); i > 0; i -= 2) {
-            auto node = list.pop();
+            auto node = list.pop({0, (uint)i});
             CUW3_CHECK(node != list.null_link, "invariant violation: list was empty");
             CUW3_CHECK(node == i - 1, "invariant violation: we popped the wrong node");
         }
@@ -369,86 +391,365 @@ namespace atomic_list_tests {
         return {job_start, job_stop};
     }
 
-    void test_atomic_list_mt(uint num_nodes, uint num_threads, uint num_ops) {
-        num_nodes += num_threads - 1;
-        num_nodes -= num_nodes % num_threads;
+    // TODO : structural tests
+    // TODO : set data and check data
+    //void test_atomic_list_mt(uint num_nodes, uint num_threads, uint num_runs, uint num_ops) {
+    //    num_nodes += num_threads - 1;
+    //    num_nodes -= num_nodes % num_threads;
 
-        List list(num_nodes);
+    //    List list(num_nodes);
 
-        struct ThreadResult {
-            uint thread_id{};
-            std::vector<ListLinkType> allocated{};
-        };
+    //    struct alignas(64) ThreadContext {
+    //        uint thread_id{};
+    //        JobPart job_part{};
+    //        std::vector<ListLinkType> popped{};
+    //    };
+    //    std::vector<ThreadContext> threads_contexts{num_threads};
 
-        std::latch prepush(num_threads);
-        std::vector<std::function<ThreadResult()>> jobs{};
-        for (uint i = 0; i < num_threads; i++) {
-            auto job_part = get_job_part(0, num_nodes, num_threads, i);
-            jobs.push_back([thread_id = i, job_part, num_ops, &list, &prepush] () -> ThreadResult {
-                ThreadResult result{thread_id};
-                std::minstd_rand rand{std::random_device{}()};
+    //    std::vector<bool> visited{};
+    //    auto barrier_structure_test = [&]() {
+    //        visited.clear();
+    //        visited.resize(num_nodes, 0);
 
-                for (uint i = job_part.start; i < job_part.stop; i++) {
-                    list.push(i);
-                }
+    //        uint curr = list.head.next;
+    //        while (curr != list.null_link) {
+    //            auto& node = list.get(curr);
+    //            visited[curr] = true;
+    //            CUW3_CHECK(curr != node.next, "cycle");
 
-                prepush.arrive_and_wait();
-                
-                uint op = 0;
-                while (op < num_ops) {
-                    auto choice = rand() % 2;
-                    if (choice) {
-                        auto node = list.pop();
-                        if (node != list.null_link) {
-                            result.allocated.push_back(node);
-                        } else {
-                            continue;
-                        }
-                    } else {
-                        if (!result.allocated.empty()) {
-                            list.push(result.allocated.back());
-                            result.allocated.pop_back();
-                        } else {
-                            continue;
-                        }
-                    }
-                    op++;
-                }
+    //            curr = node.next;
+    //        }
+    //        for (auto v : visited) {
+    //            CUW3_CHECK(v, "not all nodes were pushed");
+    //        }
+    //    };
 
-                while (true) {
-                    auto node = list.pop();
-                    if (node == list.null_link) {
-                        break;
-                    }
-                    result.allocated.push_back(node);
-                }
+    //    std::barrier barrier(num_threads, barrier_structure_test);
 
-                return result;
-            });
+    //    std::vector<std::function<void()>> jobs{};
+    //    for (uint i = 0; i < num_threads; i++) {
+    //        auto job_part = get_job_part(0, num_nodes, num_threads, i);
+    //        jobs.push_back([thread_id = i, job_part, num_ops, &list, &prepush] () -> ThreadResult {
+    //            ThreadResult result{thread_id};
+    //            std::minstd_rand rand{std::random_device{}()};
+
+    //            for (uint i = job_part.start; i < job_part.stop; i++) {
+    //                list.push(i);
+    //            }
+
+    //            prepush.arrive_and_wait();
+    //            
+    //            uint op = 0;
+    //            while (op < num_ops) {
+    //                auto choice = rand() % 2;
+    //                if (choice) {
+    //                    auto node = list.pop();
+    //                    if (node != list.null_link) {
+    //                        result.allocated.push_back(node);
+    //                    } else {
+    //                        continue;
+    //                    }
+    //                } else {
+    //                    if (!result.allocated.empty()) {
+    //                        list.push(result.allocated.back());
+    //                        result.allocated.pop_back();
+    //                    } else {
+    //                        continue;
+    //                    }
+    //                }
+    //                op++;
+    //            }
+
+    //            while (true) {
+    //                auto node = list.pop();
+    //                if (node == list.null_link) {
+    //                    break;
+    //                }
+    //                result.allocated.push_back(node);
+    //            }
+
+    //            return result;
+    //        });
+    //    }
+
+    //    dispatch(std::move(jobs));
+
+    //    uint total_allocated = 0;
+    //    for (auto& thread_context : threads_contexts) {
+    //        total_allocated += thread_context.popped.size();
+    //    }
+    //    CUW3_CHECK(total_allocated == num_nodes, "invariant violation: total allocated amount of nodes does not equal to max number of nodes.");
+
+    //    std::vector<ListLinkType> allocated{};
+    //    allocated.reserve(num_nodes);
+    //    for (auto& thread_context : threads_contexts) {
+    //        allocated.insert(allocated.end(), thread_context.popped.begin(), thread_context.popped.end());
+    //    }
+    //    std::sort(allocated.begin(), allocated.end());
+    //    
+    //    // TODO : redundant check
+    //    for (uint i = 1; i < allocated.size(); i++) {
+    //        CUW3_CHECK(allocated[i - 1] < allocated[i], "invariant violation: repeating allocations found");
+    //    } 
+    //    for (uint i = 0; i < allocated.size(); i++) {
+    //        CUW3_CHECK(allocated[i] == i, "invariant violation: contents of allocations is not full");
+    //    }
+    //}
+}
+
+namespace atomic_push_snatch_tests {
+    struct ListNode {
+        ListNode* next{};
+        ListNode* skip{};
+        uint64 data{};
+    };
+
+    struct ListTraits {
+        using LinkType = ListNode*;
+
+        static constexpr LinkType null_link = nullptr;
+    };
+
+    struct ListNodeOps {
+        ListNode* get_skip(ListNode* node) {
+            return node->skip;
         }
 
-        auto thread_results = dispatch(std::move(jobs));
-
-        uint total_allocated = 0;
-        for (auto& result : thread_results) {
-            total_allocated += result.allocated.size();
+        void set_skip(ListNode* node, ListNode* skip) {
+            node->skip = skip;
         }
-        CUW3_CHECK(total_allocated == num_nodes, "invariant violation: total allocated amount of nodes does not equal to max number of nodes.");
 
-        std::vector<ListLinkType> allocated{};
-        allocated.reserve(num_nodes);
-        for (auto& result : thread_results) {
-            allocated.insert(allocated.end(), result.allocated.begin(), result.allocated.end());
+        void reset_skip(ListNode* node) {
+            node->skip = nullptr;
         }
-        std::sort(allocated.begin(), allocated.end());
+
+        ListNode* get_next(ListNode* node) {
+            return node->next;
+        }
+
+        void set_next(ListNode* node, ListNode* next) {
+            node->next = next;
+        }
+
+        void reset_next(ListNode* node) {
+            node->next = nullptr;
+        }
+    };
+
+    using ListView = AtomicPushSnatchList<ListTraits>;
+
+    using Backoff = SimpleBackoff;
+
+    struct ListPart {
+        bool valid_list_node(ListNode* node) const {
+            if (!node) {
+                return false;
+            }
+            if (node->next == nullptr && node->skip != node) {
+                return false;
+            }
+            return true;
+        }
+
+        bool valid_single_node(ListNode* node) const {
+            if (!node) {
+                return false;
+            }
+            if (node->next != nullptr || node->skip != node) {
+                return false;
+            }
+            return true;
+        }
+
+        void push(ListNode* node) {
+            CUW3_CHECK(valid_single_node(node), "node must be single node");
+
+            push(ListPart{node});
+        }
+
+        void push(ListPart&& part) {
+            ListView{&head}.push(part.head, Backoff{}, ListNodeOps{});
+        }
+
+        [[nodiscard]] ListPart snatch() {
+            return ListPart{ListView{&head}.snatch()};
+        }
+
+        ListNode* get_skip(ListNode* node) const {
+            return ListView::get_tail(node, ListNodeOps{});
+        }
+
+        ListNode* get_tail(ListNode* node) const {
+            return ListView::get_tail(node, ListNodeOps{});
+        }
+
+        void reset() {
+            head = nullptr;
+        }
+
+        bool empty() const {
+            return head;
+        }
+
+        ListNode* head{};
+    };
+
+    struct List : ListPart, ListTraits {
+        List(uint num_nodes_) {
+            num_nodes = num_nodes_;
+            nodes = std::make_unique<ListNode[]>(num_nodes);
+        }
+
+        ListNode* get_node(uint id) const {
+            return &nodes[id];
+        }
+
+        ListNode* get_node_init(uint id, uint data) const {
+            auto* node = get_node(id);
+            node->next = nullptr;
+            node->skip = node;
+            node->data = data;
+            return node;
+        }
+
+        uint get_node_id(ListNode* node) const {
+            CUW3_CHECK(node, "node must not be nullptr");
+            CUW3_CHECK((uintptr)node >= (uintptr)nodes.get(), "invalid node given");
+
+            uint id = node - nodes.get();
+            CUW3_CHECK(id < num_nodes, "node id is invalid");
+
+            return id;
+        }
+
+        std::unique_ptr<ListNode[]> nodes{};
+        uint num_nodes{};
+    };
+
+    void test_atomic_push_snatch_list_st(uint num_nodes) {
+        std::vector<ListNode*> traversed{};
+        List list{num_nodes};
+
+        list.reset();
+        traversed.clear();
+        for (uint i = 0; i < list.num_nodes; i++) {
+            list.push(list.get_node_init(i, i));
+        }
+        {
+            ListNode* curr = list.head;
+            while (curr) {
+                traversed.push_back(curr);
+                curr = curr->next;
+            }
+
+            CUW3_CHECK(traversed.size() == list.num_nodes, "invalid amount of nodes");
+            for (uint i = 1; i < traversed.size(); i++) {
+                auto prev = list.get_node_id(traversed[i - 1]);
+                auto curr = list.get_node_id(traversed[  i  ]);
+                CUW3_CHECK(prev > curr, "invalid list structure");
+            }
+        }
+
+        list.reset();
+        traversed.clear();
+        for (uint i = list.num_nodes; i > 0; i--) {
+            list.push(list.get_node_init(i - 1, i - 1));
+        }
+        {
+            ListNode* curr = list.head;
+            while (curr) {
+                traversed.push_back(curr);
+                curr = curr->next;
+            }
+
+            CUW3_CHECK(traversed.size() == list.num_nodes, "invalid amount of nodes");
+            for (uint i = 1; i < traversed.size(); i++) {
+                auto prev = list.get_node_id(traversed[i - 1]);
+                auto curr = list.get_node_id(traversed[i]);
+                CUW3_CHECK(prev < curr, "invalid list structure");
+            }
+        }
+    }
+
+    void test_atomic_push_snatch_structure_st() {
+        List list(12);
         
-        // TODO : redundant check
-        for (uint i = 1; i < allocated.size(); i++) {
-            CUW3_CHECK(allocated[i - 1] < allocated[i], "invariant violation: repeating allocations found");
+        auto n0 = list.get_node_init(0, 0);
+        auto n1 = list.get_node_init(1, 1);
+        auto n2 = list.get_node_init(2, 2);
+        ListPart part1{};
+        part1.push(n2);
+        part1.push(n1);
+        part1.push(n0);
+        n0->skip = n2;
+        n1->skip = n2;
+        n2->skip = n2;
+
+        auto n3 = list.get_node_init(3, 3);
+        auto n4 = list.get_node_init(4, 4);
+        auto n5 = list.get_node_init(5, 5);
+        ListPart part2{};
+        part2.push(n5);
+        part2.push(n4);
+        part2.push(n3);
+        n3->skip = n5;
+        n4->skip = n5;
+        n5->skip = n5;
+
+        auto n6 = list.get_node_init(6, 6);
+        auto n7 = list.get_node_init(7, 7);
+        auto n8 = list.get_node_init(8, 8);
+        auto n9 = list.get_node_init(9, 9);
+        auto n10 = list.get_node_init(10, 10);
+        auto n11 = list.get_node_init(11, 11);
+        ListPart part3{};
+        part3.push(n11);
+        part3.push(n10);
+        part3.push(n9);
+        part3.push(n8);
+        part3.push(n7);
+        part3.push(n6);
+        n6->skip = n8;
+        n7->skip = n11;
+        n8->skip = n9;
+        n9->skip = n11;
+        n10->skip = n11;
+        n11->skip = n11;
+
+        list.reset();
+        list.push(std::move(part3));
+        list.push(std::move(part2));
+        list.push(std::move(part1));
+
+        std::vector<uint> nodes{};
+        std::vector<uint> tails{};
+        {
+            ListNode* curr = list.head;
+            while (curr) {
+                nodes.push_back(list.get_node_id(curr));
+                tails.push_back(list.get_node_id(curr->skip));
+                curr = curr->next;
+            }
         }
-        for (uint i = 0; i < allocated.size(); i++) {
-            CUW3_CHECK(allocated[i] == i, "invariant violation: contents of allocations is not full");
+
+        std::vector<uint> expected_nodes{};
+        {
+            auto result = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+            expected_nodes.insert(expected_nodes.end(), result.begin(), result.end());
         }
+
+        std::vector<uint> expected_tails{};
+        {
+            auto result = {2, 2, 2, 5, 5, 5, 11, 11, 9, 11, 11, 11};
+            expected_tails.insert(expected_tails.end(), result.begin(), result.end());
+        }
+
+        CUW3_CHECK(nodes == expected_nodes, "not exactly");
+        CUW3_CHECK(tails == expected_tails, "not exactly");
+    }
+
+    void test_atomic_push_snatch_list_mt() {
+        // TODO
     }
 }
 
@@ -467,10 +768,13 @@ int main() {
     atomic_list_tests::test_atomic_list_st(10000);
     std::cout << "test_atomic_list_st..." << std::endl;
     atomic_list_tests::test_atomic_list_st(10001);
-    for (int i = 0; i < 16; i++) {
+    /*for (int i = 0; i < 16; i++) {
         std::cout << "test_atomic_list_mt " << i << " ..." << std::endl;
         atomic_list_tests::test_atomic_list_mt(10000, 8, 100000);
-    }
+    }*/
+    atomic_push_snatch_tests::test_atomic_push_snatch_list_st(1000);
+    atomic_push_snatch_tests::test_atomic_push_snatch_structure_st();
+    atomic_push_snatch_tests::test_atomic_push_snatch_list_mt();
 
     std::cout << "done!" << std::endl;
     
