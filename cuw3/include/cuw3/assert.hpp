@@ -7,8 +7,16 @@
 
 // TODO : something more fancy, this is mostly a stub
 #define CUW3_ASSERT(cond, fmt, ...) assert(!!(cond))
-#define CUW3_ABORT(fmt, ...) std::abort()
-#define CUW3_CHECK(cond, fmt, ...) do {\
+
+// TODO : proper fmt printing (or just msg... would work just fine)
+#define CUW3_ABORT(fmt, ...) \
+do {\
+    std::cerr << (fmt) << std::endl;\
+    std::abort();\
+} while(0)
+
+#define CUW3_CHECK(cond, fmt, ...) \
+do {\
     if (!(cond)) {\
         CUW3_ABORT(fmt __VA_OPT__(,) __VA_ARGS__);\
     }\
@@ -23,6 +31,7 @@
             return value; \
         } \
     } while(0)
+
 // TODO : conter-intuitive 
 #define CUW3_ALERT_RETURN_VOID(cond, ...) \
     do { \
@@ -31,6 +40,7 @@
             return; \
         } \
     } while(0)
+
 #define CUW3_CHECK_RETURN_VAL(cond, value, ...) \
     do { \
         if (!(cond)) { \
@@ -38,6 +48,7 @@
             return value; \
         } \
     } while(0)
+
 #define CUW3_CHECK_RETURN_VOID(cond, ...) \
     do { \
         if (!(cond)) { \

@@ -241,9 +241,9 @@ namespace cuw3 {
 
         template<class NodeOps>
         static LinkType get_tail(LinkType list_head, NodeOps&& node_ops) {
-            auto skip = node_ops.get_skip(list_head);
+            auto skip = get_skip(list_head, node_ops);
             while (true) {
-                auto next_skip = node_ops.get_skip(skip);
+                auto next_skip = get_skip(skip, node_ops);
                 if (skip == next_skip) {
                     return skip;
                 }
@@ -251,9 +251,37 @@ namespace cuw3 {
             }
         }
 
+        template<class NodeOps>
+        static std::pair<LinkType, LinkType> bite(LinkType list_head, uint amount, NodeOps&& node_ops) {
+            LinkType part1 = list_head;
+            LinkType tail = list_head;
+            if (tail == null_link) {
+                return {};
+            }
+            for (uint i = 1; i < amount; i++) {
+                auto next = node_ops.get_next(tail);
+                if (next == null_link) {
+                    break;
+                }
+                tail = next;
+            }
+
+            LinkType part2 = node_ops.get_next(tail);
+            node_ops.set_next(tail, null_link);
+
+            LinkType curr = part1;
+            while (curr != null_link) {
+                node_ops.set_skip(curr, tail);
+                curr = node_ops.get_next(curr);
+            }
+            return {part1, part2};
+        }
+
         template<class Backoff, class NodeOps>
         bool push(int attempts, LinkType list_head, Backoff&& backoff, NodeOps&& node_ops) {
-            CUW3_ASSERT(list_head != null_link, "list_head must not be null");
+            if (list_head == null_link) {
+                return true;
+            }
 
             auto head_ref = std::atomic_ref{*head};
             auto head_old = head_ref.load(std::memory_order_relaxed);
@@ -281,6 +309,14 @@ namespace cuw3 {
                 return null_link;
             }
             return head_ref.exchange(null_link, std::memory_order_acq_rel);
+        }
+
+        template<class Backoff, class NodeOps>
+        [[nodiscard]] LinkType snatch_part(uint amount, Backoff&& backoff, NodeOps&& node_ops) {
+            auto snatched = snatch();
+            auto [part1, part2] = bite(snatched, amount, node_ops);
+            push(part2, backoff, node_ops);
+            return part1;
         }
 
         LinkType* head{};

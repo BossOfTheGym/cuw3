@@ -26,11 +26,12 @@ template<class Ret>
 std::future<Ret> dispatch_job(std::function<Ret()>&& job) {
     std::promise<Ret> promise{};
     std::future<Ret> future = promise.get_future();
-    std::thread thread([job = std::move(job), promise = std::move(promise)]() mutable {
+    std::thread thread([captured_job = std::move(job), captured_promise = std::move(promise)]() mutable {
         if constexpr(!std::is_same_v<Ret, void>) {
-            promise.set_value(job());
+            captured_promise.set_value(captured_job());
         } else {
-            promise.set_value();
+            captured_job();
+            captured_promise.set_value();
         }
     });
     thread.detach();
@@ -56,6 +57,21 @@ auto dispatch(std::vector<std::function<Ret()>>&& jobs) {
         return;
     }
 }
+
+struct JobPart {
+    uint start{};
+    uint stop{};
+};
+
+auto get_job_part(uint start, uint stop, uint parts, uint part_id) -> JobPart {
+    uint delta = stop - start + parts - 1;
+    delta -= delta % parts;
+    uint part = delta / parts;
+    uint job_start = std::clamp(part * part_id, start, stop);
+    uint job_stop = std::clamp(job_start + part, start, stop);
+    return {job_start, job_stop};
+}
+
 
 void test_dispatch() {
     std::vector<std::function<int()>> functions_int{};
@@ -177,17 +193,19 @@ namespace atomic_list_tests {
     using ListLinkType = uint64;
 
     struct ListNodeLabel {
-        uint32 thread{};
+        bool operator==(const ListNodeLabel&) const = default;
+
         uint32 node{};
+        uint32 thread{};
     };
 
     struct ListDataNode {
         void store(ListNodeLabel d) {
-            std::atomic_ref{data}.store(data, std::memory_order_relaxed);
+            std::atomic_ref{data}.store(d, std::memory_order_relaxed);
         }
 
         ListNodeLabel load() const {
-            std::atomic_ref{data}.load(std::memory_order_relaxed);
+            return std::atomic_ref{data}.load(std::memory_order_relaxed);
         }
 
         ListLinkType next{};
@@ -234,15 +252,15 @@ namespace atomic_list_tests {
             num_nodes = num_nodes_;
         }
 
-        void push(ListLinkType node, ListNodeLabel label) {
-            nodes[node].store(label);
+        void push(ListLinkType node, uint32 thread_id) {
+            nodes[node].store({(uint32)node, thread_id});
             ListView{&head}.push(node, ListBackoff{}, ListNodeOps{nodes.get(), num_nodes});
         }
 
-        [[nodiscard]] ListLinkType pop(ListNodeLabel label) {
+        [[nodiscard]] ListLinkType pop(uint32 thread_id) {
             auto popped = ListView{&head}.pop(ListBackoff{}, ListNodeOps{nodes.get(), num_nodes});
             if (popped != null_link) {
-                nodes[popped].store(label);
+                nodes[popped].store({(uint32)popped, thread_id});
             }
             return popped;
         }
@@ -253,6 +271,18 @@ namespace atomic_list_tests {
 
         bool empty() const {
             return head.next == null_link;
+        }
+
+        template<class Func>
+        void traverse(Func&& func) {
+            auto node_ops = ListNodeOps{nodes.get(), num_nodes};
+
+            ListLinkType curr = head.next;
+            while (curr != null_link) {
+                auto& node = get(curr);
+                func(curr, node);
+                curr = node_ops.get_next(curr);
+            }
         }
 
         ListHeadType head{};
@@ -274,234 +304,180 @@ namespace atomic_list_tests {
         return id > 0 ? id - 1 : 0;
     }
 
-    // TODO : indices
-    //struct StepIter {
-    //    int operator* () const {
-    //        return index;
-    //    }
-
-    //    StepIter& operator++ () {
-    //        index += step;
-    //        return *this;
-    //    }
-
-    //    bool operator== (const StepIter& it) const {
-    //        return index == it.index;
-    //    }
-
-    //    int index{};
-    //    int step{};
-    //};
-
-    //struct RevEvenIndices {
-    //    RevEvenIndices() {
-
-    //    }
-
-    //    RevEvenIndice
-
-    //    auto begin() {
-    //        return StepIter{id_start, -2};
-    //    }
-
-    //    auto end() {
-    //        return StepIter{id_stop, -2};
-    //    }
-
-    //    int id_start{};
-    //    int id_stop{};
-    //};
-
-    //struct RevOddIndices {
-    //    auto begin() {
-
-    //    }
-
-    //    auto end() {
-
-    //    }
-
-    //    int start{};
-    //    int stop{};
-    //};
-
     void test_atomic_list_st(ListLinkType num_nodes) {
         List list(num_nodes);
 
         for (uint i = 0; i < list.num_nodes; i++) {
-            list.push(i, {0, i});
+            list.push(i, 0);
         }
         for (uint i = 0; i < list.num_nodes; i++) {
-            auto node = list.pop({0, i});
+            auto node = list.pop(0);
             CUW3_CHECK(node != list.null_link, "invariant violation: list was empty");
             CUW3_CHECK(node == list.num_nodes - 1 - i, "invariant violation: we popped the wrong node");
         }
         CUW3_CHECK(list.empty(), "invariant violation: list was not empty");
 
         for (uint i = 0; i < list.num_nodes; i += 2) {
-            list.push(i, {0, i});
+            list.push(i, 0);
         }
         for (auto i = rev_even_iter(list.num_nodes); i > 0; i -= 2) {
-            auto node = list.pop({0, (uint)i});
+            auto node = list.pop(0);
             CUW3_CHECK(node != list.null_link, "invariant violation: list was empty");
             CUW3_CHECK(node == i - 1, "invariant violation: we popped the wrong node");
         }
         CUW3_CHECK(list.empty(), "invariant violation: list was not empty");
 
         for (uint i = 1; i < list.num_nodes; i += 2) {
-            list.push(i, {0, i});
+            list.push(i, 0);
         }
         for (auto i = rev_odd_iter(list.num_nodes); i > 0; i -= 2) {
-            auto node = list.pop({0, (uint)i});
+            auto node = list.pop(0);
             CUW3_CHECK(node != list.null_link, "invariant violation: list was empty");
             CUW3_CHECK(node == i - 1, "invariant violation: we popped the wrong node");
         }
         CUW3_CHECK(list.empty(), "invariant violation: list was not empty");
 
         for (uint i = 0; i < list.num_nodes; i += 2) {
-            list.push(i, {0, i});
+            list.push(i, 0);
         }
         for (uint i = 1; i < list.num_nodes; i += 2) {
-            list.push(i, {0, i});
+            list.push(i, 0);
         }
         for (auto i = rev_odd_iter(list.num_nodes); i > 0; i -= 2) {
-            auto node = list.pop({0, (uint)i});
+            auto node = list.pop(0);
             CUW3_CHECK(node != list.null_link, "invariant violation: list was empty");
             CUW3_CHECK(node == i - 1, "invariant violation: we popped the wrong node");
         }
         for (auto i = rev_even_iter(list.num_nodes); i > 0; i -= 2) {
-            auto node = list.pop({0, (uint)i});
+            auto node = list.pop(0);
             CUW3_CHECK(node != list.null_link, "invariant violation: list was empty");
             CUW3_CHECK(node == i - 1, "invariant violation: we popped the wrong node");
         }
         CUW3_CHECK(list.empty(), "invariant violation: list was not empty");
     }
 
-    struct JobPart {
-        uint start{};
-        uint stop{};
-    };
+    void test_atomic_list_mt(uint num_nodes, uint num_threads, uint num_runs, uint num_ops) {
+        num_nodes += num_threads - 1;
+        num_nodes -= num_nodes % num_threads;
 
-    auto get_job_part(uint start, uint stop, uint parts, uint part_id) -> JobPart {
-        uint delta = stop - start + parts - 1;
-        delta -= delta % parts;
-        uint part = delta / parts;
-        uint job_start = std::clamp(part * part_id, start, stop);
-        uint job_stop = std::clamp(job_start + part, start, stop);
-        return {job_start, job_stop};
+        List list(num_nodes);
+
+        struct alignas(64) ThreadContext {
+            std::vector<ListLinkType> popped{};
+        };
+        std::vector<ThreadContext> threads_contexts{num_threads};
+
+        std::vector<bool> visited{};
+        auto barrier_structure_test = [&]() {
+            auto check_list = [&] (List& list, uint32 thread_id) {
+                auto check = [&] (ListLinkType id, ListDataNode& node) {
+                    auto label = ListNodeLabel{(uint32)id, thread_id};
+                    CUW3_CHECK(!visited[id], "already visited");
+                    CUW3_CHECK(node.load() == label, "invalid list label");
+                    CUW3_CHECK(id != node.next, "cycle detected");
+                    
+                    visited[id] = true;
+                };
+                list.traverse(check);
+            };
+
+            visited.clear();
+            visited.resize(num_nodes, 0);
+
+            check_list(list, num_threads);
+            for (uint thread_id = 0; thread_id < num_threads; thread_id++) {
+                auto& context = threads_contexts[thread_id];
+                for (auto node : context.popped) {
+                    CUW3_CHECK(!visited[node], "node has been popped and pushed at the same time");
+
+                    visited[node] = true;
+
+                    auto& node_ref = list.get(node);
+                    auto thread_label = ListNodeLabel{(uint32)node, (uint32)thread_id};
+                    CUW3_CHECK(node_ref.data == thread_label, "invalid label set on popped node");
+                }
+            }
+            for (auto v : visited) {
+                CUW3_CHECK(v, "not all nodes were pushed");
+            }
+        };
+
+        std::barrier barrier(num_threads, barrier_structure_test);
+        std::latch meetup(num_threads);
+
+        std::vector<std::function<void()>> jobs{};
+        for (uint i = 0; i < num_threads; i++) {
+            auto job_part = get_job_part(0, num_nodes, num_threads, i);
+            jobs.push_back([&, thread_id = i, job_part] () {
+                std::minstd_rand rand{std::random_device{}()};
+
+                for (uint i = job_part.start; i < job_part.stop; i++) {
+                    list.push(i, num_threads);
+                }
+                meetup.arrive_and_wait();
+                
+                for (uint run = 0; run < num_runs; run++) {
+                    auto& context = threads_contexts[thread_id];
+
+                    uint op = 0;
+                    while (op < num_ops) {
+                        auto choice = rand() % 2;
+                        if (choice) { // pop
+                            auto node = list.pop(thread_id);
+                            if (node != list.null_link) {
+                                context.popped.push_back(node);
+                            } else {
+                                continue;
+                            }
+                        } else { // push
+                            if (!context.popped.empty()) {
+                                list.push(context.popped.back(), num_threads);
+                                context.popped.pop_back();
+                            } else {
+                                continue;
+                            }
+                        }
+                        op++;
+                    }
+
+                    barrier.arrive_and_wait();
+    
+                    while (true) {
+                        auto node = list.pop(thread_id);
+                        if (node == list.null_link) {
+                            break;
+                        }
+                        context.popped.push_back(node);
+                    }
+
+                    barrier.arrive_and_wait();
+                }
+            });
+        }
+        dispatch(std::move(jobs));
     }
-
-    // TODO : structural tests
-    // TODO : set data and check data
-    //void test_atomic_list_mt(uint num_nodes, uint num_threads, uint num_runs, uint num_ops) {
-    //    num_nodes += num_threads - 1;
-    //    num_nodes -= num_nodes % num_threads;
-
-    //    List list(num_nodes);
-
-    //    struct alignas(64) ThreadContext {
-    //        uint thread_id{};
-    //        JobPart job_part{};
-    //        std::vector<ListLinkType> popped{};
-    //    };
-    //    std::vector<ThreadContext> threads_contexts{num_threads};
-
-    //    std::vector<bool> visited{};
-    //    auto barrier_structure_test = [&]() {
-    //        visited.clear();
-    //        visited.resize(num_nodes, 0);
-
-    //        uint curr = list.head.next;
-    //        while (curr != list.null_link) {
-    //            auto& node = list.get(curr);
-    //            visited[curr] = true;
-    //            CUW3_CHECK(curr != node.next, "cycle");
-
-    //            curr = node.next;
-    //        }
-    //        for (auto v : visited) {
-    //            CUW3_CHECK(v, "not all nodes were pushed");
-    //        }
-    //    };
-
-    //    std::barrier barrier(num_threads, barrier_structure_test);
-
-    //    std::vector<std::function<void()>> jobs{};
-    //    for (uint i = 0; i < num_threads; i++) {
-    //        auto job_part = get_job_part(0, num_nodes, num_threads, i);
-    //        jobs.push_back([thread_id = i, job_part, num_ops, &list, &prepush] () -> ThreadResult {
-    //            ThreadResult result{thread_id};
-    //            std::minstd_rand rand{std::random_device{}()};
-
-    //            for (uint i = job_part.start; i < job_part.stop; i++) {
-    //                list.push(i);
-    //            }
-
-    //            prepush.arrive_and_wait();
-    //            
-    //            uint op = 0;
-    //            while (op < num_ops) {
-    //                auto choice = rand() % 2;
-    //                if (choice) {
-    //                    auto node = list.pop();
-    //                    if (node != list.null_link) {
-    //                        result.allocated.push_back(node);
-    //                    } else {
-    //                        continue;
-    //                    }
-    //                } else {
-    //                    if (!result.allocated.empty()) {
-    //                        list.push(result.allocated.back());
-    //                        result.allocated.pop_back();
-    //                    } else {
-    //                        continue;
-    //                    }
-    //                }
-    //                op++;
-    //            }
-
-    //            while (true) {
-    //                auto node = list.pop();
-    //                if (node == list.null_link) {
-    //                    break;
-    //                }
-    //                result.allocated.push_back(node);
-    //            }
-
-    //            return result;
-    //        });
-    //    }
-
-    //    dispatch(std::move(jobs));
-
-    //    uint total_allocated = 0;
-    //    for (auto& thread_context : threads_contexts) {
-    //        total_allocated += thread_context.popped.size();
-    //    }
-    //    CUW3_CHECK(total_allocated == num_nodes, "invariant violation: total allocated amount of nodes does not equal to max number of nodes.");
-
-    //    std::vector<ListLinkType> allocated{};
-    //    allocated.reserve(num_nodes);
-    //    for (auto& thread_context : threads_contexts) {
-    //        allocated.insert(allocated.end(), thread_context.popped.begin(), thread_context.popped.end());
-    //    }
-    //    std::sort(allocated.begin(), allocated.end());
-    //    
-    //    // TODO : redundant check
-    //    for (uint i = 1; i < allocated.size(); i++) {
-    //        CUW3_CHECK(allocated[i - 1] < allocated[i], "invariant violation: repeating allocations found");
-    //    } 
-    //    for (uint i = 0; i < allocated.size(); i++) {
-    //        CUW3_CHECK(allocated[i] == i, "invariant violation: contents of allocations is not full");
-    //    }
-    //}
 }
 
 namespace atomic_push_snatch_tests {
+    struct ListNodeLabel {
+        bool operator== (const ListNodeLabel&) const = default;
+
+        uint32 node_id{};
+        uint32 thread_id{};
+    };
+
     struct ListNode {
+        void store(ListNodeLabel new_label) {
+            std::atomic_ref{label}.store(new_label, std::memory_order_relaxed);
+        }
+
+        ListNodeLabel load() {
+            return std::atomic_ref{label}.load(std::memory_order_relaxed);
+        }
+
         ListNode* next{};
         ListNode* skip{};
-        uint64 data{};
+        ListNodeLabel label{};
     };
 
     struct ListTraits {
@@ -568,11 +544,15 @@ namespace atomic_push_snatch_tests {
         }
 
         void push(ListPart&& part) {
-            ListView{&head}.push(part.head, Backoff{}, ListNodeOps{});
+            ListView{&head}.push(std::exchange(part.head, nullptr), Backoff{}, ListNodeOps{});
         }
 
         [[nodiscard]] ListPart snatch() {
             return ListPart{ListView{&head}.snatch()};
+        }
+
+        [[nodiscard]] ListPart snatch_part(uint amount) {
+            return ListPart{ListView{&head}.snatch_part(amount, Backoff{}, ListNodeOps{})};
         }
 
         ListNode* get_skip(ListNode* node) const {
@@ -588,7 +568,16 @@ namespace atomic_push_snatch_tests {
         }
 
         bool empty() const {
-            return head;
+            return !head;
+        }
+
+        template<class Func>
+        void traverse(Func&& func) {
+            auto* curr = head;
+            while (curr) {
+                func(curr);
+                curr = curr->next;
+            }
         }
 
         ListNode* head{};
@@ -600,19 +589,68 @@ namespace atomic_push_snatch_tests {
             nodes = std::make_unique<ListNode[]>(num_nodes);
         }
 
+        void push_n_label(ListNode* node, uint32 thread_id = 0) {
+            node->store({get_node_id(node), thread_id});
+            ListPart::push(node);
+        }
+
+        void push_n_label(ListPart&& part, uint32 thread_id = 0) {
+            part.traverse([&] (ListNode* node) {
+                node->store({get_node_id(node), thread_id});
+            });
+            ListPart::push(std::move(part));
+        }
+
+        [[nodiscard]] ListPart snatch_part_n_label(uint part_size, uint32 thread_id = 0) {
+            auto part = ListPart::snatch_part(part_size);
+            part.traverse([&](ListNode* node) {
+                node->store({get_node_id(node), thread_id});
+            });
+            return part;
+            
+            // ListPart snatched = ListPart::snatch();
+
+            // auto bite = [] (ListPart&& part, uint count) -> std::pair<ListPart, ListPart> {
+            //     ListPart part1{std::exchange(part.head, nullptr)};
+            //     ListNode* tail = part.head;
+            //     if (!tail) {
+            //         return {};
+            //     }
+            //     for (uint i = 0; i < count && tail->next; i++) {
+            //         tail = tail->next;
+            //     }
+
+            //     ListPart part2{std::exchange(tail->next, nullptr)};
+
+            //     ListNode* curr = part1.head;
+            //     while (curr) {
+            //         curr->skip = tail;
+            //         curr = curr->next;
+            //     }
+            //     return {part1, part2};
+            // };
+
+            // auto [part1, part2] = bite(std::move(snatched), part_size);
+            // ListPart::push(std::move(part2));
+            // part1.traverse([&] (ListNode* node) {
+            //     node->store({get_node_id(node), thread_id});
+            // });
+            // return part1;
+        }
+
         ListNode* get_node(uint id) const {
             return &nodes[id];
         }
 
-        ListNode* get_node_init(uint id, uint data) const {
+        ListNode* get_node_init(uint32 id, uint32 thread_id) const {
             auto* node = get_node(id);
             node->next = nullptr;
             node->skip = node;
-            node->data = data;
+            node->label = {id, thread_id};
             return node;
         }
 
-        uint get_node_id(ListNode* node) const {
+        uint32 get_node_id(ListNode* node) const {
             CUW3_CHECK(node, "node must not be nullptr");
             CUW3_CHECK((uintptr)node >= (uintptr)nodes.get(), "invalid node given");
 
@@ -748,8 +786,101 @@ namespace atomic_push_snatch_tests {
         CUW3_CHECK(tails == expected_tails, "not exactly");
     }
 
-    void test_atomic_push_snatch_list_mt() {
-        // TODO
+    void test_atomic_push_snatch_list_mt(uint num_nodes, uint num_threads, uint num_runs, uint num_ops) {
+        num_nodes = num_nodes + num_threads - 1;
+        num_nodes -= num_nodes % num_threads;
+
+        List list(num_nodes);
+
+        struct ThreadContext {
+            uint thread_id{};
+            JobPart job_part{};
+            std::vector<ListPart> list_parts{};
+        };
+        std::vector<ThreadContext> threads_contexts(num_threads);
+
+        std::vector<bool> visited{};
+        auto barrier_structure_test = [&] () {
+            auto check_list_part = [&] (ListPart list_part, uint32 thread_id) {
+                auto check = [&] (ListNode* node) {
+                    auto node_id = list.get_node_id(node);
+                    auto label = ListNodeLabel{node_id, thread_id};
+                    CUW3_CHECK(!visited[node_id], "already visited");
+                    CUW3_CHECK(node->load() == label, "invalid list label");
+                    CUW3_CHECK(node != node->next, "cycle detected");
+                    
+                    visited[node_id] = true;
+                };
+                list_part.traverse(check);
+            };
+
+            visited.clear();
+            visited.resize(num_nodes, false);
+
+            check_list_part(list, num_threads);
+            for (uint thread_id = 0; thread_id < num_threads; thread_id++) {
+                auto& context = threads_contexts[thread_id];
+                for (auto list_part : context.list_parts) {
+                    check_list_part(list_part, thread_id);
+                }
+            }
+            for (auto v : visited) {
+                CUW3_CHECK(v, "not all nodes were visited");
+            }
+        };
+
+        std::barrier barrier(num_threads, barrier_structure_test);
+
+        std::vector<std::function<void()>> jobs{};
+        for (uint thread_id = 0; thread_id < num_threads; thread_id++) {
+            auto job_part = get_job_part(0, num_nodes, num_threads, thread_id);
+            jobs.push_back([&, thread_id, job_part] () {
+                auto rand = std::minstd_rand{std::random_device{}()};
+
+                for (uint node_id = job_part.start; node_id < job_part.stop; node_id++) {
+                    list.push_n_label(list.get_node_init(node_id, num_threads), num_threads);
+                }
+
+                barrier.arrive_and_wait();
+
+                auto& context = threads_contexts[thread_id];
+                for (uint run = 0; run < num_runs; run++) {
+                    uint ops = 0;
+                    while (ops < num_ops) {
+                        uint op = rand() % 2;
+                        if (op == 0) { // snatch
+                            auto amount = 1;
+                            auto snatched = list.snatch_part_n_label(amount, thread_id);
+                            if (!snatched.empty()) {
+                                context.list_parts.push_back(snatched);
+                            } else {
+                                continue;
+                            }
+                        } else { // push
+                            if (!context.list_parts.empty()) {
+                                auto part = context.list_parts.back();
+                                context.list_parts.pop_back();
+                                list.push_n_label(std::move(part), num_threads);
+                            } else {
+                                continue;
+                            }
+                        }
+                        ops++;
+                    }
+
+                    barrier.arrive_and_wait();
+
+                    while (!context.list_parts.empty()) {
+                        auto part = context.list_parts.back();
+                        context.list_parts.pop_back();
+                        list.push_n_label(std::move(part), num_threads);
+                    }
+
+                    barrier.arrive_and_wait();
+                }
+            });
+        }
+        dispatch(std::move(jobs));
     }
 }
 
@@ -768,13 +899,19 @@ int main() {
     atomic_list_tests::test_atomic_list_st(10000);
     std::cout << "test_atomic_list_st..." << std::endl;
     atomic_list_tests::test_atomic_list_st(10001);
-    /*for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 16; i++) {
         std::cout << "test_atomic_list_mt " << i << " ..." << std::endl;
-        atomic_list_tests::test_atomic_list_mt(10000, 8, 100000);
-    }*/
+        atomic_list_tests::test_atomic_list_mt(50000, 1, 16, 200000);
+    }
+
+    std::cout << "test_atomic_push_snatch_list_st..." << std::endl;
     atomic_push_snatch_tests::test_atomic_push_snatch_list_st(1000);
+    std::cout << "test_atomic_push_snatch_structure_st..." << std::endl;
     atomic_push_snatch_tests::test_atomic_push_snatch_structure_st();
-    atomic_push_snatch_tests::test_atomic_push_snatch_list_mt();
+    for (int i = 0; i < 16; i++) {
+        std::cout << "test_atomic_push_snatch_list_mt " << i << " ..." << std::endl;
+        atomic_push_snatch_tests::test_atomic_push_snatch_list_mt(100000, 16, 32, 200000);
+    }
 
     std::cout << "done!" << std::endl;
     
