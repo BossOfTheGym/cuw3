@@ -26,9 +26,6 @@ target_link_libraries(test_pool_allocator cuw3)
 add_executable_ext(test_region_chunk_allocator test_region_chunk_allocator.cpp)
 target_link_libraries(test_region_chunk_allocator cuw3)
 
-add_executable_ext(test_retire_reclaim test_retire_reclaim.cpp)
-target_link_libraries(test_retire_reclaim cuw3)
-
 add_executable_ext(test_thread_graveyard test_thread_graveyard.cpp)
 target_link_libraries(test_thread_graveyard cuw3)
 

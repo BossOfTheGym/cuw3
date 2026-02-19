@@ -155,6 +155,7 @@ namespace cuw3 {
         DefaultThreadGraveyardEntry* tail{};
     };
     
+    // TODO : outdated, change tail to skip
     struct DefaultThreadGraveyardOps {
         void set_next(void* node, void* next) {
             ((DefaultThreadGraveyardEntry*)node)->next = (DefaultThreadGraveyardEntry*)next;

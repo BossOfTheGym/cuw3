@@ -2,98 +2,9 @@
 #include "cuw3/atomic.hpp"
 #include "cuw3/backoff.hpp"
 
-#include <latch>
-#include <mutex>
-#include <vector>
-#include <thread>
-#include <future>
-#include <random>
-#include <utility>
-#include <numeric>
-#include <barrier>
-#include <iostream>
-#include <algorithm>
-#include <functional>
-#include <condition_variable>
+#include "tests_common.hpp"
 
 using namespace cuw3;
-
-// TODO : atomic list
-// TODO : atomic stack
-// TODO : atomic push snatch list
-
-template<class Ret>
-std::future<Ret> dispatch_job(std::function<Ret()>&& job) {
-    std::promise<Ret> promise{};
-    std::future<Ret> future = promise.get_future();
-    std::thread thread([captured_job = std::move(job), captured_promise = std::move(promise)]() mutable {
-        if constexpr(!std::is_same_v<Ret, void>) {
-            captured_promise.set_value(captured_job());
-        } else {
-            captured_job();
-            captured_promise.set_value();
-        }
-    });
-    thread.detach();
-    return future;
-}
-
-template<class Ret>
-auto dispatch(std::vector<std::function<Ret()>>&& jobs) {
-    std::vector<std::future<Ret>> futures;
-    for (auto& func : jobs) {
-        futures.push_back(dispatch_job(std::move(func)));
-    }
-    if constexpr(!std::is_same_v<Ret, void>) {
-        std::vector<Ret> results{};
-        for (auto& future : futures) {
-            results.push_back(future.get());
-        }
-        return results;
-    } else {
-        for (auto& future : futures) {
-            future.get();
-        }
-        return;
-    }
-}
-
-struct JobPart {
-    uint start{};
-    uint stop{};
-};
-
-auto get_job_part(uint start, uint stop, uint parts, uint part_id) -> JobPart {
-    uint delta = stop - start + parts - 1;
-    delta -= delta % parts;
-    uint part = delta / parts;
-    uint job_start = std::clamp(part * part_id, start, stop);
-    uint job_stop = std::clamp(job_start + part, start, stop);
-    return {job_start, job_stop};
-}
-
-
-void test_dispatch() {
-    std::vector<std::function<int()>> functions_int{};
-    for (int i = 0; i < 16; i++) {
-        functions_int.push_back([i] () {
-            return i;
-        });
-    }
-    auto results = dispatch(std::move(functions_int));
-    for (auto result : results) {
-        std::cout << result << " ";
-    }
-    std::cout << std::endl;
-
-    std::vector<std::function<void()>> functions_void{};
-    for (int i = 0; i < 16; i++) {
-        functions_void.push_back([] () {
-            return;
-        });
-    }
-    dispatch(std::move(functions_void));
-}
 
 namespace atomic_stack_tests {
     using StackLinkType = uint64;
@@ -607,35 +518,6 @@ namespace atomic_push_snatch_tests {
                 node->store({get_node_id(node), thread_id});
             });
             return part;
-            
-            // ListPart snatched = ListPart::snatch();
-
-            // auto bite = [] (ListPart&& part, uint count) -> std::pair<ListPart, ListPart> {
-            //     ListPart part1{std::exchange(part.head, nullptr)};
-            //     ListNode* tail = part.head;
-            //     if (!tail) {
-            //         return {};
-            //     }
-            //     for (uint i = 0; i < count && tail->next; i++) {
-            //         tail = tail->next;
-            //     }
-
-            //     ListPart part2{std::exchange(tail->next, nullptr)};
-
-            //     ListNode* curr = part1.head;
-            //     while (curr) {
-            //         curr->skip = tail;
-            //         curr = curr->next;
-            //     }
-            //     return {part1, part2};
-            // };
-
-            // auto [part1, part2] = bite(std::move(snatched), part_size);
-            // ListPart::push(std::move(part2));
-            // part1.traverse([&] (ListNode* node) {
-            //     node->store({get_node_id(node), thread_id});
-            // });
-            // return part1;
         }
 
         ListNode* get_node(uint id) const {
@@ -885,9 +767,6 @@ namespace atomic_push_snatch_tests {
 }
 
 int main() {
-    std::cout << "test dispatch..." << std::endl;
-    test_dispatch();
-
     std::cout << "test_atomic_stack_st..." << std::endl;
     atomic_stack_tests::test_atomic_stack_st(10000);
     for (int i = 0; i < 16; i++) {

@@ -11,6 +11,7 @@ namespace cuw3 {
     enum VMemAllocType : uintptr {
         VMemReserve = 1,
         VMemCommit = 2,
+        // Jesus Christ, just use this. I have to lokk into the implementation each time I attempt to use this
         VMemReserveCommit = VMemReserve | VMemCommit,
         VMemHugepages = 4, // for now ignored and unused
     };

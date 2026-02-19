@@ -45,7 +45,7 @@ namespace cuw3 {
     // As the name suggests: this must be placed at the beginning of the handle memory location
     using RegionChunkHandleHeaderDataRaw = uint64;
     
-    inline constexpr uint64 region_chunk_handle_header_data_bits = 12;
+    inline constexpr uint64 region_chunk_handle_header_data_bits = 6;
     inline constexpr uint64 region_chunk_handle_header_ptr_alignment = 1 << region_chunk_handle_header_data_bits;
     
     using RegionChunkHandleHeaderData = AlignmentPackedPtr<uint64, region_chunk_handle_header_data_bits>;
