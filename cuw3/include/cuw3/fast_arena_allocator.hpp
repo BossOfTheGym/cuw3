@@ -637,7 +637,7 @@ namespace cuw3 {
                 case NoResource:
                     break;
                 default:
-                    CUW3_ABORT("unreachanble");
+                    CUW3_ABORT("unreachable");
             }
             
             acquired = _acquire_bin_arena(size_aligned, alignment_id);
@@ -648,12 +648,13 @@ namespace cuw3 {
                 case NoResource:
                     break;
                 default:
-                    CUW3_ABORT("unreachanble");
+                    CUW3_ABORT("unreachable");
             }
 
             return AcquiredTypedResource<FastArena>::no_resource();
         }
 
+        [[nodiscard]]
 
         // get arena to allocate from
         // arena is removed from the data structure
@@ -831,12 +832,19 @@ namespace cuw3 {
             return fast_arena_bins.num_alignments;
         }
 
+        uint64 min_alignment() const {
+            return get_alignment(0);
+        }
+
+        uint64 max_alignment() const {
+            return get_alignment(num_alignments() - 1);
+        }
+
         uint64 get_alignment(uint64 alignment_id) const {
             return fast_arena_bins.get_alignment(alignment_id);
         }
 
-        uint64 min_alloc_size(uint64 alignment) const {
-            uint64 alignment_id = fast_arena_bins.locate_alignment(alignment);
+        uint64 min_alloc_size(uint64 alignment_id) const {
             if (alignment_id < num_alignments()) {
                 return fast_arena_bins.get_min_alloc_size(alignment_id);
             }

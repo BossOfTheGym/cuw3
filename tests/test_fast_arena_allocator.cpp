@@ -505,7 +505,7 @@ namespace fast_arena_allocator_tests {
             CUW3_CHECK(arena_data_int <= ptr_int && ptr_int < arena_data_int + arena_data_ptr.size(), "invalid pointer");
 
             auto arena_index = ptr_int / arena_size;
-            auto* arena = std::launder((FastArena*)advance_arr(arena_data_ptr.get(), arena_size, arena_index));
+            auto* arena = (FastArena*)advance_arr(arena_data_ptr.get(), arena_size, arena_index); // launder not needed here
             CUW3_CHECK(is_aligned(ptr, FastArenaView{arena}.alignment()), "ptr is misaligned");
             CUW3_CHECK(ptr_int + size < (uintptr)FastArenaView{arena}.data_end(), "ptr goes out of bound");
 
@@ -560,7 +560,7 @@ namespace fast_arena_allocator_tests {
         }
 
         [[nodiscard]] TestFastArenaAllocation allocate(uint64 size, uint64 alignment) {
-            AcquiredFastArena acquired = allocator.acquire_arena(size, alignment);
+            AcquiredTypedResource<FastArena> acquired = allocator.acquire_arena(size, alignment);
             if (acquired.status_acquired()) {
                 return {acquired.get(), allocator.allocate(acquired, size)};
             }
@@ -585,11 +585,23 @@ namespace fast_arena_allocator_tests {
         }
 
         uint64 min_alignment() const {
-            return 0; // TODO
+            return allocator.min_alignment();
         }
 
         uint64 max_alignment() const {
-            return 0; // TODO
+            return allocator.max_alignment();
+        }
+
+        uint64 num_alignments() const {
+            return allocator.num_alignments();
+        }
+
+        uint64 min_alloc_size(uint64 alignment_id) const {
+            return allocator.min_alloc_size(alignment_id);
+        }
+
+        uint64 max_alloc_size() const {
+            return allocator.max_alloc_size();
         }
 
         uint64 arena_size() const {
@@ -610,14 +622,12 @@ namespace fast_arena_allocator_tests {
     // TODO : allocate random size for specified alignment
     // TODO : deallocate
     struct TestFastArenaRandomAllocation {
+        FastArena* arena{};
         void* ptr{};
         uint64 size{};
     };
 
     struct TestFastArenaRandomAllocator : TestFastArenaAllocator {
-        struct TrackedAllocEntry {
-            std::vector<FastArena*> arenas{};
-        };
 
         TestFastArenaRandomAllocator(uint arena_size, uint num_arenas)
             : TestFastArenaAllocator(num_arenas, arena_size)
@@ -741,11 +751,11 @@ namespace fast_arena_allocator_tests {
     }
 
     void test_fast_arena_allocator_st() {
-
+        // TODO
     }
 
     void test_fast_arena_allocator_retire_reclaim() {
-
+        // TODO
     }
 }
 
