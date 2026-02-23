@@ -413,7 +413,7 @@ namespace cuw3 {
 
                 uint64 entry_min_alloc_size_hint = align(min_alloc_size, bins->get_alignment(alignment_id));
                 auto info = bins->get_step_split_info(entry_min_alloc_size_hint, true);
-                entry.min_alloc_size = info.get_step_split_size(bins->num_splits_log2);
+                entry.min_alloc_size = info.get_step_split_size();
                 entry.min_step_split_id = info.step_split_id;
             }
 
@@ -441,6 +441,10 @@ namespace cuw3 {
             return global_max_alloc_size;
         }
 
+        uint64 get_global_maxmin_alloc_size() const {
+            return step_split_entries[num_alignments - 1].min_alloc_size;
+        }
+
         uint64 locate_alignment(uint64 alignment) const {
             uint64 alignment_log2 = intlog2(alignment);
             if (alignment_log2 > max_arena_alignment_log2) {
@@ -455,16 +459,35 @@ namespace cuw3 {
                 return intpow2(step_size_log2);
             }
 
-            uint64 get_step_split_size(uint64 num_splits_log2) const {
+            uint64 get_step_split_size() const {
                 return step_base + split_id * divpow2(get_step_size(), num_splits_log2);
             }
 
             uint64 step_id{};
             uint64 split_id{};
-            uint64 step_split_id{};
+            uint64 step_split_id{}; // can become denormalized, that's okay
             uint64 step_base{};
             uint64 step_size_log2{};
+            uint64 num_splits_log2{};
         };
+
+        StepSplitInfo step_split_id_to_info(uint64 step_split_id) const {
+            CUW3_CHECK(step_split_id < num_step_splits, "invalid step_split_id");
+
+            uint64 step_id = divpow2(step_split_id, num_splits_log2);
+            uint64 split_id = modpow2(step_split_id, num_splits_log2);
+
+            uint64 step_base{};
+            uint64 step_size_log2{};
+            if (step_id > 0) {
+                step_size_log2 = min_arena_step_size_log2 + step_id - 1;
+                step_base = intpow2(step_size_log2);
+            } else {
+                step_size_log2 = min_arena_step_size_log2;
+                step_base = 0;
+            }
+            return {step_id, split_id, step_split_id, step_base, step_size_log2, num_splits_log2};
+        }
 
         StepSplitInfo get_step_split_info(uint64 size, bool align_split_up) const {
             uint64 step_size_log2 = std::min(intlog2(size), max_arena_step_size_log2);
@@ -477,12 +500,12 @@ namespace cuw3 {
                 step_base = intpow2(step_size_log2);
             }
 
-            uint64 split_offset = (align_split_up ? intpow2(step_size_log2- num_splits_log2) - 1 : 0);
+            uint64 split_offset = (align_split_up ? intpow2(step_size_log2 - num_splits_log2) - 1 : 0);
             uint64 split_id = std::min(divpow2(mulpow2(size + split_offset - step_base, num_splits_log2), step_size_log2), num_splits);
             uint64 step_split_id = mulpow2(step_id, num_splits_log2) + split_id;
             CUW3_CHECK(step_split_id < num_step_splits, "invalid step_split index calculated");
 
-            return {step_id, split_id, step_split_id, step_base, step_size_log2};
+            return {step_id, split_id, step_split_id, step_base, step_size_log2, num_splits_log2};
         }
 
         // size must be aligned beforehand if required
@@ -492,6 +515,16 @@ namespace cuw3 {
 
         uint64 locate_step_split_arena(uint64 size) const {
             return get_step_split_info(size, false).step_split_id;
+        }
+
+        uint64 locate_step_split_arena_clamped(uint64 alignment_id, uint64 size) const {
+            CUW3_CHECK(check_alignment_id(alignment_id), "invalid alignment");
+
+            uint64 step_split_id = locate_step_split_arena(size);
+            if (step_split_id < step_split_entries[alignment_id].min_step_split_id) {
+                step_split_id = 0;
+            }
+            return step_split_id;
         }
 
         bool check_alignment(uint64 alignment) const {
@@ -524,9 +557,6 @@ namespace cuw3 {
             CUW3_ASSERT(is_aligned(size_aligned, get_alignment(alignment_id)), "aligned size expected");
             
             auto& entry = step_split_entries[alignment_id];
-            auto step_split_id = locate_step_split_size(size_aligned);
-            CUW3_ASSERT(step_split_id >= entry.min_step_split_id, "attempt to acquire arena from improper bin");
-
             auto arena_view = FastArenaView{entry.cached_arena};
             CUW3_CHECK(arena_view.remaining() >= entry.min_alloc_size, "invariant violation: cached arena has less space that min_alloc_size");
 
@@ -637,7 +667,7 @@ namespace cuw3 {
                 case NoResource:
                     break;
                 default:
-                    CUW3_ABORT("unreachable");
+                    CUW3_ABORT("unreachable reached");
             }
             
             acquired = _acquire_bin_arena(size_aligned, alignment_id);
@@ -648,13 +678,36 @@ namespace cuw3 {
                 case NoResource:
                     break;
                 default:
-                    CUW3_ABORT("unreachable");
+                    CUW3_ABORT("unreachable reached");
             }
 
             return AcquiredTypedResource<FastArena>::no_resource();
         }
 
-        [[nodiscard]]
+        // for testing purposes only
+        bool _has_any_available_arenas(uint64 alignment_id) const {
+            CUW3_CHECK(check_alignment_id(alignment_id), "invalid alignment id");
+
+            auto& entry = step_split_entries[alignment_id];
+            return entry.present_arenas.any_set(entry.min_step_split_id) || entry.cached_arena;
+        }
+
+        // for testing purposes only
+        [[nodiscard]] uint64 _sample_allocation_upper_bound(uint64 alignment_id, uint64 seed) const {
+            CUW3_CHECK(check_alignment_id(alignment_id), "invalid alignment id");
+            
+            auto& entry = step_split_entries[alignment_id];
+            uint64 step_split_id = entry.present_arenas.sample_set_bit(seed, 1); // skip the empty bin
+            if (step_split_id != entry.present_arenas.null_bit) {
+                auto info = step_split_id_to_info(step_split_id);
+                return info.get_step_split_size();
+            }
+            if (entry.cached_arena) {
+                return FastArenaView{entry.cached_arena}.remaining();
+            }
+            return 0;
+        }
+
 
         // get arena to allocate from
         // arena is removed from the data structure
@@ -674,7 +727,7 @@ namespace cuw3 {
         }
 
         // return arena back into the data structure
-        // returns arena if it is empty
+        // arena can get into the recycling bin if necessary (if there is not much space left)
         void release_arena(FastArena* arena) {
             CUW3_CHECK(arena, "arena was null");
 
@@ -739,10 +792,7 @@ namespace cuw3 {
 
             CUW3_CHECK(arena_view.in_list(), "arena must have been present in some bin");
 
-            auto step_split_id = locate_step_split_arena(arena_view.remaining());
-            if (step_split_id < entry.min_step_split_id) {
-                step_split_id = 0;
-            }
+            auto step_split_id = locate_step_split_arena_clamped(alignment_id, arena_view.remaining());
             list_erase(arena_view.list_entry(), FastArenaListOps{});
             arena_view.move_out_of_list();
             if (list_empty(&entry.arenas[step_split_id].list_head, FastArenaListOps{})) {
@@ -824,38 +874,53 @@ namespace cuw3 {
         }
 
 
+        // can be used for tsting purposes only
+        // must never be used by any code other than testing code
+        [[nodiscard]] uint64 _sample_allocation_upper_bound(uint64 alignment_id, uint64 seed) const {
+            uint64 upper_bound = fast_arena_bins._sample_allocation_upper_bound(alignment_id, seed);
+            if (upper_bound == 0) {
+                CUW3_CHECK(fast_arena_bins._has_any_available_arenas(alignment_id), "sample function does not work properly");
+            }
+            return upper_bound;
+        }
+
+
         bool supports_alignment(uint64 alignment) const {
             return fast_arena_bins.check_alignment(alignment);
         }
 
-        uint64 num_alignments() const {
+        uint64 get_num_alignments() const {
             return fast_arena_bins.num_alignments;
         }
 
-        uint64 min_alignment() const {
+        uint64 get_min_alignment() const {
             return get_alignment(0);
         }
 
-        uint64 max_alignment() const {
-            return get_alignment(num_alignments() - 1);
+        uint64 get_max_alignment() const {
+            return get_alignment(get_num_alignments() - 1);
         }
 
         uint64 get_alignment(uint64 alignment_id) const {
             return fast_arena_bins.get_alignment(alignment_id);
         }
 
-        uint64 min_alloc_size(uint64 alignment_id) const {
-            if (alignment_id < num_alignments()) {
+        uint64 get_min_alloc_size(uint64 alignment_id) const {
+            if (alignment_id < get_num_alignments()) {
                 return fast_arena_bins.get_min_alloc_size(alignment_id);
             }
             return 0;
         }
 
-        uint64 max_alloc_size() const {
+        uint64 get_max_alloc_size() const {
             return fast_arena_bins.get_global_max_alloc_size();
         }
 
-        // 
+        uint64 get_maxmin_alloc_size() const {
+            return fast_arena_bins.get_global_maxmin_alloc_size();
+        }
+
+
         // acquire arena for allocation, may be null
         [[nodiscard]] AcquiredTypedResource<FastArena> acquire_arena(uint64 size, uint64 alignment) {
             return fast_arena_bins.acquire_arena(size, alignment);

@@ -3,6 +3,9 @@
 #include <cassert>
 #include <iostream>
 
+// TODO : add check_critical
+// TODO : add macro that disables all checks but critical
+
 // TODO : describe when to use each of the utilities
 
 // TODO : something more fancy, this is mostly a stub

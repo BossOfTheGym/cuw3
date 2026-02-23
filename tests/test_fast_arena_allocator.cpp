@@ -540,9 +540,13 @@ namespace fast_arena_allocator_tests {
             auto& bins_config = allocator_config.bins_config;
             bins_config.num_splits_log2 = 7;
             bins_config.min_arena_step_size_log2 = 12;
-            bins_config.max_arena_step_size_log2 = 16;
+            bins_config.max_arena_step_size_log2 = 20;
             bins_config.min_arena_alignment_log2 = 4;
             bins_config.max_arena_alignment_log2 = 9;
+
+            (void)FastArenaAllocator::create(allocator_config);
+
+            CUW3_CHECK(allocator.get_maxmin_alloc_size() <= arena_size, "invalid arena size");
         }
         
         [[nodiscard]] FastArena* _construct_arena(void* arena, void* handle, uint64 alignment) {
@@ -575,7 +579,7 @@ namespace fast_arena_allocator_tests {
         }
 
         // return arena ptr belonged, arena can become invalid after deallocation so you may not use it after
-        [[nodiscard]] FastArena* deallocate(void* ptr, uint64 size) {
+        FastArena* deallocate(void* ptr, uint64 size) {
             auto* arena = arena_storage.locate_arena(ptr, size);
             auto* released = allocator.deallocate(arena, ptr, size);
             if (released) {
@@ -584,24 +588,27 @@ namespace fast_arena_allocator_tests {
             return arena;
         }
 
+        // TODO : retire/reclaim
+
+
         uint64 min_alignment() const {
-            return allocator.min_alignment();
+            return allocator.get_min_alignment();
         }
 
         uint64 max_alignment() const {
-            return allocator.max_alignment();
+            return allocator.get_max_alignment();
         }
 
         uint64 num_alignments() const {
-            return allocator.num_alignments();
+            return allocator.get_num_alignments();
         }
 
         uint64 min_alloc_size(uint64 alignment_id) const {
-            return allocator.min_alloc_size(alignment_id);
+            return allocator.get_min_alloc_size(alignment_id);
         }
 
         uint64 max_alloc_size() const {
-            return allocator.max_alloc_size();
+            return allocator.get_max_alloc_size();
         }
 
         uint64 arena_size() const {
@@ -612,38 +619,56 @@ namespace fast_arena_allocator_tests {
             return arena_storage.num_arenas;
         }
 
+        uint64 sample_allocation_upper_bound(uint64 alignment_id, uint64 sample_seed) const {
+            return allocator._sample_allocation_upper_bound(alignment_id, sample_seed);
+        }
+
+
         TestFastArenaMemoryStorage arena_storage;
         FastArenaAllocator allocator;
     };
 
-    // what do I want...
-    // !!! VHS SEX !!!
-    // TODO : allocate random size for random alignment
-    // TODO : allocate random size for specified alignment
-    // TODO : deallocate
     struct TestFastArenaRandomAllocation {
-        FastArena* arena{};
+        bool operator== (const TestFastArenaRandomAllocation& other) const {
+            return ptr == other.ptr;
+        }
+
+        explicit operator bool() const {
+            return ptr;
+        }
+
         void* ptr{};
+        uint64 alignment{};
         uint64 size{};
     };
 
     struct TestFastArenaRandomAllocator : TestFastArenaAllocator {
-
         TestFastArenaRandomAllocator(uint arena_size, uint num_arenas)
             : TestFastArenaAllocator(num_arenas, arena_size)
             , gen(std::random_device{}())
         {}
 
-        void* allocate(uint64 alignment) {
+        [[nodiscard]] TestFastArenaRandomAllocation allocate() {
+            uint64 alignment_id = gen() % num_alignments();
+            uint64 alignment = allocator.get_alignment(alignment_id);
+            uint64 sample_seed = gen();
+            uint64 upper_bound = sample_allocation_upper_bound(alignment_id, sample_seed);
+            uint64 lower_bound = min_alloc_size(alignment_id);
+            CUW3_CHECK(upper_bound >= lower_bound, "invalid upper bound sampled");
 
-        }
+            bool check_expected = true;
+            if (upper_bound == 0) {
+                check_expected = false;
+                upper_bound = arena_size();
+            }
 
-        void deallocate(void* ptr, uint64 size) {
-
+            uint64 size = std::uniform_int_distribution<uint64>{lower_bound, upper_bound}(gen);
+            auto allocation = TestFastArenaAllocator::allocate(size, alignment);
+            CUW3_CHECK(!check_expected || allocation, "failed to make expected allocation");
+            return {allocation.ptr, alignment, size};
         }
 
         std::minstd_rand0 gen;
-        std::uniform_int_distribution<uint64> dist;
     };
 
     void test_fast_arena_bins_location() {
@@ -750,8 +775,13 @@ namespace fast_arena_allocator_tests {
         }
     }
 
-    void test_fast_arena_allocator_st() {
-        // TODO
+    void test_fast_arena_allocator_st(uint arena_size, uint num_arenas) {
+        std::vector<TestFastArenaRandomAllocation> allocations{};
+        
+    }
+
+    void test_fast_arena_allocator_st_max_alloc(uint arena_size, uint num_arenas) {
+        
     }
 
     void test_fast_arena_allocator_retire_reclaim() {
