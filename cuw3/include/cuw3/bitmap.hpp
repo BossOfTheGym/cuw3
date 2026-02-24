@@ -156,6 +156,10 @@ namespace cuw3 {
             return false;
         }
 
+        bool all_reset(gsize start = 0) const {
+            return !any_set(start);
+        }
+
 
         gsize count(gsize start = 0) const {
             CUW3_ASSERT(start < bit_capacity, "invalid bit");

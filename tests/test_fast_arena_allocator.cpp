@@ -512,6 +512,10 @@ namespace fast_arena_allocator_tests {
             return arena;
         }
 
+        bool is_empty() const {
+            return allocated == 0;
+        }
+
         VMemPtr arena_data_ptr{};
         VMemPtr arena_handles_ptr{};
 
@@ -589,6 +593,11 @@ namespace fast_arena_allocator_tests {
         }
 
         // TODO : retire/reclaim
+
+
+        bool is_allocator_empty() const {
+            return allocator._is_allocator_empty() && arena_storage.is_empty();
+        }
 
 
         uint64 min_alignment() const {
@@ -775,13 +784,51 @@ namespace fast_arena_allocator_tests {
         }
     }
 
-    void test_fast_arena_allocator_st(uint arena_size, uint num_arenas) {
+    template<class T>
+    T random_sample_n_pop(std::vector<T>& vec, uint64 seed) {
+        CUW3_CHECK(!vec.empty(), "attempt to sample from an empty vector");
+
+        std::swap(vec[seed % vec.size()], vec.back());
+        auto elem = std::move(vec.back());
+        vec.pop_back();
+        return elem;
+    }
+
+    void test_fast_arena_allocator_st(uint arena_size, uint num_arenas, uint rounds, uint ops) {
+        TestFastArenaRandomAllocator allocator(arena_size, num_arenas);
+        std::minstd_rand0 gen{std::random_device{}()};
         std::vector<TestFastArenaRandomAllocation> allocations{};
-        
+
+        for (uint round = 0; round < rounds; round++) {
+            uint op = 0;
+            while (op < ops) {
+                if (gen() % 2 == 0) {
+                    // allocate
+                    auto allocation = allocator.allocate();
+                    if (!allocation) {
+                        continue;
+                    }
+                    allocations.push_back(allocation);
+                } else {
+                    // deallocate
+                    if (allocations.empty()) {
+                        continue;
+                    }
+                    auto allocation = random_sample_n_pop(allocations, gen());
+                    allocator.deallocate(allocation.ptr, allocation.size);
+                }
+                op++;
+            }
+            while (!allocations.empty()) {
+                auto allocation = random_sample_n_pop(allocations, gen());
+                allocator.deallocate(allocation.ptr, allocation.size);
+            }
+            CUW3_CHECK(allocator.is_allocator_empty(), "allocator is not empty");
+        }
     }
 
     void test_fast_arena_allocator_st_max_alloc(uint arena_size, uint num_arenas) {
-        
+        // TODO
     }
 
     void test_fast_arena_allocator_retire_reclaim() {

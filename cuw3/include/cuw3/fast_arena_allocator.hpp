@@ -360,9 +360,15 @@ namespace cuw3 {
             FastArenaBitmap present_arenas = {};
             // cached arena that we choose to allocate from without scanning arena array
             FastArena* cached_arena = {};
-
+            // we update arena only if the incoming arena has twice as much capacity
+            // or if we have refused to update it with arena with greater capacity for some predefined amount of times
+            // not const
             uint64 cache_misses{};
+            // min id of the bin that can be used by the algorithm
+            // const
             uint64 min_step_split_id{};
+            // min possible size of the allocation that can be made by any suitable arena
+            // const
             uint64 min_alloc_size{};
         };
 
@@ -684,6 +690,7 @@ namespace cuw3 {
             return AcquiredTypedResource<FastArena>::no_resource();
         }
 
+
         // for testing purposes only
         bool _has_any_available_arenas(uint64 alignment_id) const {
             CUW3_CHECK(check_alignment_id(alignment_id), "invalid alignment id");
@@ -706,6 +713,25 @@ namespace cuw3 {
                 return FastArenaView{entry.cached_arena}.remaining();
             }
             return 0;
+        }
+
+        // for testing purposes only
+        bool _is_allocator_empty() const {
+            for (uint alignment_id = 0; alignment_id < num_alignments; alignment_id++) {
+                auto& entry = step_split_entries[alignment_id];
+                if (entry.cached_arena) {
+                    return false;
+                }
+                if (!entry.present_arenas.all_reset()) {
+                    return false;
+                }
+                for (uint bin = 0; bin < num_step_splits; bin++) {
+                    if (!list_empty(&entry.arenas[bin], FastArenaListOps{})) {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
 
 
@@ -874,14 +900,18 @@ namespace cuw3 {
         }
 
 
-        // can be used for tsting purposes only
-        // must never be used by any code other than testing code
+        // for testing purposes only
         [[nodiscard]] uint64 _sample_allocation_upper_bound(uint64 alignment_id, uint64 seed) const {
             uint64 upper_bound = fast_arena_bins._sample_allocation_upper_bound(alignment_id, seed);
             if (upper_bound == 0) {
                 CUW3_CHECK(fast_arena_bins._has_any_available_arenas(alignment_id), "sample function does not work properly");
             }
             return upper_bound;
+        }
+
+        // for testing purposes only
+        bool _is_allocator_empty() const {
+            return fast_arena_bins._is_allocator_empty();
         }
 
 
