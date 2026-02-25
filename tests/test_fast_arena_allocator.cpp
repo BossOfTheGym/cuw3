@@ -544,7 +544,7 @@ namespace fast_arena_allocator_tests {
             auto& bins_config = allocator_config.bins_config;
             bins_config.num_splits_log2 = 7;
             bins_config.min_arena_step_size_log2 = 12;
-            bins_config.max_arena_step_size_log2 = 20;
+            bins_config.max_arena_step_size_log2 = 19; // max alloc is 2^20
             bins_config.min_arena_alignment_log2 = 4;
             bins_config.max_arena_alignment_log2 = 9;
 
@@ -592,7 +592,19 @@ namespace fast_arena_allocator_tests {
             return arena;
         }
 
-        // TODO : retire/reclaim
+        void retire(void* ptr, uint64 size) {
+
+        }
+
+        void reclaim() {
+            auto reclaim_list = allocator.reclaim();
+            while (!reclaim_list.empty()) {
+                auto* arena = reclaim_list.pop();
+
+                auto arena_view = FastArenaView{arena};
+                arena_view.reclaim_allocations();
+            }
+        }
 
 
         bool is_allocator_empty() const {
@@ -600,31 +612,35 @@ namespace fast_arena_allocator_tests {
         }
 
 
-        uint64 min_alignment() const {
+        uint64 get_min_alignment() const {
             return allocator.get_min_alignment();
         }
 
-        uint64 max_alignment() const {
+        uint64 get_max_alignment() const {
             return allocator.get_max_alignment();
         }
 
-        uint64 num_alignments() const {
+        uint64 get_num_alignments() const {
             return allocator.get_num_alignments();
         }
 
-        uint64 min_alloc_size(uint64 alignment_id) const {
+        uint64 get_alignment(uint64 alignment_id) const {
+            return allocator.get_alignment(alignment_id);
+        }
+
+        uint64 get_min_alloc_size(uint64 alignment_id) const {
             return allocator.get_min_alloc_size(alignment_id);
         }
 
-        uint64 max_alloc_size() const {
+        uint64 get_max_alloc_size() const {
             return allocator.get_max_alloc_size();
         }
 
-        uint64 arena_size() const {
+        uint64 get_arena_size() const {
             return arena_storage.arena_size;
         }
 
-        uint64 num_arenas() const {
+        uint64 get_num_arenas() const {
             return arena_storage.num_arenas;
         }
 
@@ -657,27 +673,57 @@ namespace fast_arena_allocator_tests {
             , gen(std::random_device{}())
         {}
 
-        [[nodiscard]] TestFastArenaRandomAllocation allocate() {
-            uint64 alignment_id = gen() % num_alignments();
-            uint64 alignment = allocator.get_alignment(alignment_id);
+        [[nodiscard]] TestFastArenaRandomAllocation allocate(uint64 lower_bound = 0) {
+            uint64 alignment_id = gen() % get_num_alignments();
+            uint64 alignment = get_alignment(alignment_id);
             uint64 sample_seed = gen();
             uint64 upper_bound = sample_allocation_upper_bound(alignment_id, sample_seed);
-            uint64 lower_bound = min_alloc_size(alignment_id);
-            CUW3_CHECK(upper_bound >= lower_bound, "invalid upper bound sampled");
+            uint64 min_alloc_size = get_min_alloc_size(alignment_id);
+
+            CUW3_CHECK(upper_bound == 0 || upper_bound >= min_alloc_size, "invalid upper bound sampled");
 
             bool check_expected = true;
             if (upper_bound == 0) {
                 check_expected = false;
-                upper_bound = arena_size();
+                upper_bound = get_arena_size();
+            }
+
+            if (lower_bound == 0) {
+                lower_bound = min_alloc_size;
+            } else {
+                lower_bound = std::min(lower_bound, upper_bound);
             }
 
             uint64 size = std::uniform_int_distribution<uint64>{lower_bound, upper_bound}(gen);
+            size = align(size, alignment);
+
             auto allocation = TestFastArenaAllocator::allocate(size, alignment);
             CUW3_CHECK(!check_expected || allocation, "failed to make expected allocation");
             return {allocation.ptr, alignment, size};
         }
 
         std::minstd_rand0 gen;
+    };
+
+    template<class T>
+    T random_sample_n_pop(std::vector<T>& vec, uint64 seed) {
+        CUW3_CHECK(!vec.empty(), "attempt to sample from an empty vector");
+
+        std::swap(vec[seed % vec.size()], vec.back());
+        auto elem = std::move(vec.back());
+        vec.pop_back();
+        return elem;
+    }
+
+    struct TestFastArenaRandomMaxAllocator : TestFastArenaRandomAllocator {
+        TestFastArenaRandomMaxAllocator(uint arena_size, uint num_arenas)
+            : TestFastArenaRandomAllocator(arena_size, num_arenas) {
+            CUW3_CHECK(get_max_alloc_size() == get_arena_size(), "arena size must be mac alloc size");
+        }
+
+        [[nodiscard]] TestFastArenaRandomAllocation allocate() {
+            return TestFastArenaRandomAllocator::allocate(get_arena_size());
+        }
     };
 
     void test_fast_arena_bins_location() {
@@ -784,18 +830,9 @@ namespace fast_arena_allocator_tests {
         }
     }
 
-    template<class T>
-    T random_sample_n_pop(std::vector<T>& vec, uint64 seed) {
-        CUW3_CHECK(!vec.empty(), "attempt to sample from an empty vector");
-
-        std::swap(vec[seed % vec.size()], vec.back());
-        auto elem = std::move(vec.back());
-        vec.pop_back();
-        return elem;
-    }
-
     void test_fast_arena_allocator_st(uint arena_size, uint num_arenas, uint rounds, uint ops) {
         TestFastArenaRandomAllocator allocator(arena_size, num_arenas);
+
         std::minstd_rand0 gen{std::random_device{}()};
         std::vector<TestFastArenaRandomAllocation> allocations{};
 
@@ -808,6 +845,7 @@ namespace fast_arena_allocator_tests {
                     if (!allocation) {
                         continue;
                     }
+                    std::memset(allocation.ptr, 0xFF, allocation.size);
                     allocations.push_back(allocation);
                 } else {
                     // deallocate
@@ -827,8 +865,40 @@ namespace fast_arena_allocator_tests {
         }
     }
 
-    void test_fast_arena_allocator_st_max_alloc(uint arena_size, uint num_arenas) {
-        // TODO
+    void test_fast_arena_allocator_st_max_alloc(uint arena_size, uint num_arenas, uint rounds, uint ops) {
+        TestFastArenaRandomMaxAllocator allocator(arena_size, num_arenas);
+
+        std::minstd_rand0 gen(std::random_device{}());
+        std::vector<TestFastArenaRandomAllocation> allocations{};
+        for (uint round = 0; round < rounds; round++) {
+            uint op = 0;
+            while (op < ops) {
+                uint op_type = gen() % 2;   
+                if (op_type == 0) {
+                    // allocate
+                    auto allocation = allocator.allocate();
+                    if (!allocation) {
+                        continue;
+                    }
+                    CUW3_CHECK(allocation.size == allocator.get_arena_size(), "improper allocation size");
+
+                    allocations.push_back(allocation);
+                } else {
+                    // deallocate
+                    if (allocations.empty()) {
+                        continue;
+                    }
+                    auto allocation = random_sample_n_pop(allocations, gen());
+                    allocator.deallocate(allocation.ptr, allocation.size);
+                }
+                op++;
+            }
+            while (!allocations.empty()) {
+                auto allocation = random_sample_n_pop(allocations, gen());
+                allocator.deallocate(allocation.ptr, allocation.size);
+            }
+            CUW3_CHECK(allocator.is_allocator_empty(), "allocator was not empty");
+        }
     }
 
     void test_fast_arena_allocator_retire_reclaim() {
@@ -842,7 +912,7 @@ int main() {
     fast_arena_tests::test_arena_partial_exaustion2(64);
 
     fast_arena_allocator_tests::test_fast_arena_bins_location();
-    fast_arena_allocator_tests::test_fast_arena_allocator_st();
+    fast_arena_allocator_tests::test_fast_arena_allocator_st(1 << 20, 1 << 8, 1 << 10, 1 << 16);
     fast_arena_allocator_tests::test_fast_arena_allocator_retire_reclaim();
     std::cout << "it's done!" << std::endl;
     return 0;

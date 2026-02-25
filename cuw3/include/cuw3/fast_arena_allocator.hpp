@@ -1,12 +1,13 @@
 #pragma once
 
 #include "conf.hpp"
-#include "cuw3/assert.hpp"
 #include "list.hpp"
 #include "bitmap.hpp"
+#include "assert.hpp"
 #include "backoff.hpp"
 #include "retire_reclaim.hpp"
 #include "region_chunk_handle.hpp"
+
 #include <cmath>
 
 namespace cuw3 {
@@ -704,7 +705,7 @@ namespace cuw3 {
             CUW3_CHECK(check_alignment_id(alignment_id), "invalid alignment id");
             
             auto& entry = step_split_entries[alignment_id];
-            uint64 step_split_id = entry.present_arenas.sample_set_bit(seed, 1); // skip the empty bin
+            uint64 step_split_id = entry.present_arenas.sample_set_bit(seed, entry.min_step_split_id);
             if (step_split_id != entry.present_arenas.null_bit) {
                 auto info = step_split_id_to_info(step_split_id);
                 return info.get_step_split_size();
@@ -768,6 +769,33 @@ namespace cuw3 {
             _release_arena(arena, alignment_id);
         }
 
+        // arena is guaranteed to be in the data structure
+        // we are about to modify it 
+        void extract_arena(FastArena* arena) {
+            CUW3_CHECK(arena, "arena was null");
+
+            auto arena_view = FastArenaView{arena};
+
+            auto alignment_id = locate_alignment(arena_view.alignment());
+            CUW3_CHECK(check_alignment_id(alignment_id), "invalid alignment");
+
+            auto& entry = step_split_entries[alignment_id];
+            if (arena == entry.cached_arena) {
+                entry.cached_arena = nullptr;
+                return;
+            }
+
+            // TODO : this shit repeats itself
+            auto step_split_id = locate_step_split_arena_clamped(alignment_id, arena_view.remaining());
+            list_erase(arena_view.list_entry(), FastArenaListOps{});
+            arena_view.move_out_of_list();
+            if (list_empty(&entry.arenas[step_split_id].list_head, FastArenaListOps{})) {
+                entry.present_arenas.unset(step_split_id);
+            }
+        }
+
+        
+        // TODO : move allocate, deallocate to the allocator
         // arena was either previously acquired or has just been created
         // either way arena is not in the data structure
         [[nodiscard]] void* allocate(AcquiredTypedResource<FastArena> arena, uint64 size) {
@@ -999,7 +1027,7 @@ namespace cuw3 {
         }
 
         void postpone(FastArenaReclaimList list) {
-            CUW3_ASSERT(!retired_arenas.entry.next_postponed, "already postponed");
+            CUW3_CHECK(!retired_arenas.entry.next_postponed, "already postponed");
 
             retired_arenas.entry.next_postponed = list.head;
         }
