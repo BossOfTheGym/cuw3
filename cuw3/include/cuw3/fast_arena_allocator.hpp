@@ -46,12 +46,9 @@ namespace cuw3 {
     struct FastArenaConfig {
         void* owner{};
 
-        void* arena_handle{};
         void* arena_memory{};
-
-        uint64 arena_handle_size{};
-        uint64 arena_alignment{};
         uint64 arena_memory_size{};
+        uint64 arena_alignment{};
 
         RetireReclaimRawPtr retire_reclaim_flags{};
     };
@@ -60,18 +57,17 @@ namespace cuw3 {
     // only aligned allocations can be made
     // remaining bytes must be always aligned
     struct FastArenaView {
-        [[nodiscard]] static FastArena* create_fast_arena(const FastArenaConfig& config) {
-            CUW3_CHECK_RETURN_VAL(config.owner, nullptr, "owner was null");
-            CUW3_CHECK_RETURN_VAL(config.arena_handle, nullptr, "arena handle was null");
-            CUW3_CHECK_RETURN_VAL(config.arena_memory, nullptr, "arena memory was null");
-            CUW3_CHECK_RETURN_VAL(is_aligned(config.arena_handle, conf_cacheline), nullptr, "arena handle was not properly aligned");
+        [[nodiscard]] static FastArena* create(Memory memory, const FastArenaConfig& config) {
+            CUW3_CHECK_RETURN_VAL(memory.fits<FastArena>(conf_control_block_size, conf_cacheline), nullptr, "inappropriate memory");
 
-            CUW3_CHECK_RETURN_VAL(config.arena_handle_size == conf_control_block_size, nullptr, "invalid size of arena handle");
+            CUW3_CHECK_RETURN_VAL(config.owner, nullptr, "owner was null");
+            CUW3_CHECK_RETURN_VAL(config.arena_memory, nullptr, "arena memory was null");
+
             CUW3_CHECK_RETURN_VAL(is_alignment(config.arena_alignment) && config.arena_alignment >= conf_min_alloc_alignment, nullptr, "invalid alignment provided");
             CUW3_CHECK_RETURN_VAL(is_aligned(config.arena_memory_size, config.arena_alignment), nullptr, "arena size is not properly aligned");
             CUW3_CHECK_RETURN_VAL(is_aligned(config.arena_memory, config.arena_alignment), nullptr, "arena memory is not properly aligned");
 
-            auto* arena = initz_region_chunk_handle<FastArena>(config.arena_handle, config.arena_handle_size);
+            auto* arena = new (memory.get()) FastArena{};
             RegionChunkHandleHeaderView{&arena->region_chunk_header}.start_chunk_lifetime(config.owner, (uint64)RegionChunkType::FastArena);
 
             arena->arena_alignment = config.arena_alignment;
@@ -79,12 +75,16 @@ namespace cuw3 {
             arena->arena_memory_size = config.arena_memory_size;
             arena->arena_memory = config.arena_memory;
 
-            (void)RetireReclaimEntryView::create(&arena->retire_reclaim_entry, config.retire_reclaim_flags, (uint32)RegionChunkType::FastArena, offsetof(FastArena, retire_reclaim_entry));
+            auto* retire_reclaim_entry = RetireReclaimEntryView::create(
+                Memory::from(&arena->retire_reclaim_entry), config.retire_reclaim_flags, (uint32)RegionChunkType::FastArena, offsetof(FastArena, retire_reclaim_entry)
+            );
+            CUW3_CHECK_RETURN_VAL(retire_reclaim_entry, nullptr, "fast_arena: failed to create retire_reclaim_entry");
+
             return arena;
         }
 
-        [[nodiscard]] static FastArenaView create(const FastArenaConfig& config) {
-            return {create_fast_arena(config)};
+        [[nodiscard]] static FastArenaView create_view(Memory memory, const FastArenaConfig& config) {
+            return {create(memory, config)};
         }
 
 
@@ -102,24 +102,20 @@ namespace cuw3 {
             return advance_ptr(arena->arena_memory, old_top);
         }
 
-        // TODO : rework release logic
-        void release_unchecked(uint64 size) {
-            release(arena->arena_memory, size);
+        void release_reclaimed(uint64 size) {
+            release(arena->arena_memory, size); // dummy ptr
         }
 
-        // TODO : rework release logic
         void release(void* memory, uint64 size) {
             release_aligned(memory, align(size, arena->arena_alignment));
         }
 
-        // TODO : rework release logic
         void release_aligned(void* memory, uint64 size) {
-            // TODO : maybe switch to check-n-return?
             CUW3_ASSERT(is_aligned(size, alignment()), "size is not aligned");
             CUW3_ASSERT(has_memory_range(memory, size), "memory does not belong to the arena");
 
             uint64 new_freed = arena->freed + size;
-            CUW3_CHECK(new_freed <= arena->arena_memory_size, "we have freed more than allocated");
+            CUW3_CHECK(new_freed <= arena->top, "we have freed more than allocated");
 
             arena->freed = new_freed;
         }
@@ -203,7 +199,7 @@ namespace cuw3 {
         void reclaim_allocations() {
             auto retire_reclaim_entry_view = RetireReclaimPtrView{&arena->retire_reclaim_entry.head};
             RetireReclaimPtr reclaimed = retire_reclaim_entry_view.reclaim();
-            release_unchecked(reclaimed.value_shifted());
+            release_reclaimed(reclaimed.value_shifted());
         }
 
 
@@ -351,6 +347,35 @@ namespace cuw3 {
         using FastArenaBitmap = Bitmap<uint64, step_split_axis>;
 
         struct FastArenaBin {
+            [[nodiscard]] FastArena* pop() {
+                CUW3_ASSERT(!empty(), "list was empty");
+
+                auto popped = FastArena::list_entry_to_arena(list_pop_head(&list_head, FastArenaListOps{}));
+                FastArenaView{popped}.move_out_of_list();
+                return popped;
+            }
+
+            void push(FastArena* arena) {
+                CUW3_ASSERT(arena, "arena was null");
+
+                list_push_head(&list_head, &arena->list_entry, FastArenaListOps{});
+            }
+
+            void extract(FastArena* arena) {
+                CUW3_ASSERT(arena, "arena was null");
+
+                auto arena_view = FastArenaView{arena};
+                CUW3_CHECK(arena_view.in_list(), "arena was not in any list");
+                CUW3_CHECK(!empty(), "attempt to extract from an empty list");
+
+                list_erase(arena_view.list_entry(), FastArenaListOps{});
+                arena_view.move_out_of_list();
+            }
+
+            bool empty() const {
+                return list_empty(&list_head, FastArenaListOps{});
+            }
+
             FastArenaListEntry list_head{};
         };
 
@@ -460,6 +485,10 @@ namespace cuw3 {
             }
 
 
+            uint64 get_num_step_splits() const {
+                return num_step_splits;
+            }
+
             uint64 get_min_alloc_size(uint64 alignment_id) const {
                 CUW3_ASSERT(alignment_id < num_alignments, "invalid alignment id");
 
@@ -470,6 +499,10 @@ namespace cuw3 {
                 CUW3_ASSERT(alignment_id < num_alignments, "invalid alignment id");
 
                 return min_step_split_id[alignment_id];
+            }
+
+            uint64 get_num_alignments() const {
+                return num_alignments;
             }
 
             uint64 get_alignment(uint64 alignment_id) const {
@@ -563,8 +596,11 @@ namespace cuw3 {
         };
 
         struct FastArenaStepSplitEntry {
+            static constexpr auto null_step_split_id = FastArenaBitmap::null_bit;
+
             [[nodiscard]] static FastArenaStepSplitEntry* create(
                 Memory memory,
+                uint64 alignment,
                 uint64 num_step_split_bins,
                 uint64 min_step_split_id,
                 uint64 min_alloc_size
@@ -577,6 +613,7 @@ namespace cuw3 {
                 for (uint i = 0; i < num_step_split_bins; i++) {
                     list_init(&entry->arenas[i].list_head, FastArenaListOps{});
                 }
+                entry->alignment = alignment;
                 entry->num_step_split_bins = num_step_split_bins;
                 entry->min_step_split_id = min_step_split_id;
                 entry->min_alloc_size = min_alloc_size;
@@ -584,21 +621,126 @@ namespace cuw3 {
             }
 
 
-            [[nodiscard]] FastArena* acquire_cached() {
+            [[nodiscard]] AcquiredTypedResource<FastArena> _acquire_cached_arena(uint64 size_aligned) {
+                CUW3_ASSERT(is_aligned(size_aligned, alignment), "aligned size expected");
+                
+                auto arena_view = FastArenaView{cached_arena};
+                CUW3_CHECK(arena_view.remaining() >= min_alloc_size, "invariant violation: cached arena has less space that min_alloc_size");
 
+                if (arena_view.can_allocate_aligned(size_aligned)) {
+                    return AcquiredTypedResource<FastArena>::acquired(std::exchange(cached_arena, nullptr));
+                }
+                return AcquiredTypedResource<FastArena>::no_resource();
             }
 
-            [[nodiscard]] FastArena* acquire_arena(uint64 bin) {
+            [[nodiscard]] AcquiredTypedResource<FastArena> _acquire_bin_arena(uint64 step_split_id, uint64 size_aligned) {
+                CUW3_ASSERT(is_aligned(size_aligned, alignment), "aligned size expected");
+                CUW3_ASSERT(min_step_split_id <= step_split_id && step_split_id < num_step_split_bins, "attempt to acquire arena from the improper bin");
 
+                auto present_arena_bin_id = present_arenas.get_first_set(step_split_id);
+                if (present_arena_bin_id == present_arenas.null_bit) {
+                    return AcquiredTypedResource<FastArena>::no_resource();
+                }
+
+                auto& bin = arenas[present_arena_bin_id];
+                CUW3_CHECK(bin.empty(), "invariant violation: bit set but list is empty");
+
+                auto* arena = bin.pop();
+                if (bin.empty()) {
+                    present_arenas.unset(present_arena_bin_id);
+                }
+
+                auto arena_view = FastArenaView{arena};
+                CUW3_CHECK(arena_view.remaining() >= min_alloc_size, "invariant violation: cached arena has less space that min_alloc_size");
+
+                return AcquiredTypedResource<FastArena>::acquired(arena);
             }
 
-            void put_arena(FastArena* arena, uint64 bin) {
+            [[nodiscard]] FastArena* _try_update_cached_arena(FastArena* arena) {
+                CUW3_ASSERT(arena, "arena was null");
 
+                // decision to use offered arena as a cached one
+                auto arena_view = FastArenaView{arena};
+                if (!cached_arena) {
+                    if (arena_view.remaining() >= min_alloc_size) {
+                        cached_arena = arena;
+                        return nullptr;
+                    }
+                    return arena;
+                }
+
+                // decision to update existing arena
+                auto cached_arena_view = FastArenaView{cached_arena};
+                uint64 curr_remaining = cached_arena_view.remaining();
+                CUW3_CHECK(curr_remaining >= min_alloc_size, "invariant violation: remaining space is less than min_alloc_size");
+
+                uint64 new_remaining = arena_view.remaining();
+                if (new_remaining >= 2 * curr_remaining) {
+                    cache_misses = 0;
+                    return std::exchange(cached_arena, arena);
+                } else if (new_remaining > curr_remaining) {
+                    cache_misses++;
+                    if (cache_misses == 4) {
+                        cache_misses = 0;
+                        return std::exchange(cached_arena, arena);
+                    }
+                }
+                return arena;
             }
 
-            [[nodiscard]] FastArena* extract_arena(uint64 bin, FastArena* extracted) {
+            // arena is not in any list
+            void _put_arena(FastArena* arena, uint64 step_split_id) {
+                CUW3_ASSERT(arena, "arena was null");
+                CUW3_ASSERT(min_step_split_id <= step_split_id && step_split_id < num_step_split_bins, "invalid step_split value");
 
+                auto arena_view = FastArenaView{arena};
+                CUW3_CHECK(!arena_view.in_list(), "arena must not be in any list");
+
+                auto& bin = arenas[step_split_id];
+                auto was_empty = bin.empty();
+                bin.push(arena);
+                if (was_empty) {
+                    present_arenas.set(step_split_id);
+                }
             }
+            
+            [[nodiscard]] FastArena* _try_extract_cached_arena(FastArena* extracted) {
+                CUW3_ASSERT(extracted, "arena was null");
+
+                if (extracted == cached_arena) {
+                    cached_arena = nullptr;
+                    return extracted;
+                }
+                return nullptr;
+            }
+
+            [[nodiscard]] FastArena* _try_extract_bin_arena(FastArena* extracted, uint64 step_split_id) {
+                CUW3_ASSERT(extracted, "arena was null");
+                CUW3_ASSERT(min_step_split_id <= step_split_id && step_split_id < num_step_split_bins, "invalid step_split value");
+
+                if (!FastArenaView{extracted}.in_list()) {
+                    return nullptr;
+                }
+
+                auto& bin = arenas[step_split_id];
+                bin.extract(extracted);
+                if (bin.empty()) {
+                    present_arenas.unset(step_split_id);
+                }
+                return extracted;
+            }
+
+
+            // for testing purposes only
+            bool _has_any_available_arenas() const {
+                return cached_arena || present_arenas.any_set(min_step_split_id);
+            }
+
+            // for testing purposes only
+            [[nodiscard]] uint64 _sample_largest_bin() const {
+                return present_arenas.get_last_set_bit(min_step_split_id);
+            }
+
 
             // arena selection array of lists helping to choose proper arena to allocate from
             FastArenaBin arenas[step_split_axis] = {};
@@ -607,6 +749,8 @@ namespace cuw3 {
             // cached arena that we choose to allocate from without scanning arena array
             FastArena* cached_arena = {};
 
+            // obvious
+            uint64 alignment{};
             // obvious
             uint64 num_step_split_bins{};
             // we update arena only if the incoming arena has twice as much capacity
@@ -633,9 +777,10 @@ namespace cuw3 {
             for (uint alignment_id = 0; alignment_id < bins_info->num_alignments; alignment_id++) {
                 auto* entry = FastArenaStepSplitEntry::create(
                     Memory::from(&bins->step_split_entries[alignment_id]),
-                    bins_info->num_step_splits,
+                    bins_info->get_alignment(alignment_id),
+                    bins_info->get_num_step_splits(),
                     bins_info->get_min_step_split_id(alignment_id),
-                    bins_info->get_min_alloc_size(alignment_id),
+                    bins_info->get_min_alloc_size(alignment_id)
                 );
                 CUW3_CHECK_RETURN_VAL(entry, nullptr, "failed to initialize step split entry");
             }
@@ -646,95 +791,38 @@ namespace cuw3 {
 
         // can_allocate returned true
         [[nodiscard]] AcquiredTypedResource<FastArena> _acquire_cached_arena(uint64 size_aligned, uint64 alignment_id) {
-            CUW3_ASSERT(check_alignment_id(alignment_id), "invalid alignment id");
-            CUW3_ASSERT(is_aligned(size_aligned, get_alignment(alignment_id)), "aligned size expected");
+            CUW3_ASSERT(bins_info.check_alignment_id(alignment_id), "invalid alignment id");
             
-            auto& entry = step_split_entries[alignment_id];
-            auto arena_view = FastArenaView{entry.cached_arena};
-            CUW3_CHECK(arena_view.remaining() >= entry.min_alloc_size, "invariant violation: cached arena has less space that min_alloc_size");
-
-            if (arena_view.can_allocate_aligned(size_aligned)) {
-                return AcquiredTypedResource<FastArena>::acquired(std::exchange(entry.cached_arena, nullptr));
-            }
-            return AcquiredTypedResource<FastArena>::no_resource();
+            return step_split_entries[alignment_id]._acquire_cached_arena(size_aligned);
         }
 
         // _can_allocate => true
         [[nodiscard]] AcquiredTypedResource<FastArena> _acquire_bin_arena(uint64 size_aligned, uint64 alignment_id) {
-            CUW3_ASSERT(check_alignment_id(alignment_id), "invalid alignment id");
-            CUW3_ASSERT(is_aligned(size_aligned, get_alignment(alignment_id)), "aligned size expected");
+            CUW3_ASSERT(bins_info.check_alignment_id(alignment_id), "invalid alignment id");
 
+            auto step_split_id = bins_info.locate_step_split_size(size_aligned);
             auto& entry = step_split_entries[alignment_id];
-            auto step_split_id = locate_step_split_size(size_aligned);
-            CUW3_ASSERT(step_split_id >= entry.min_step_split_id, "attempt to acquire arena from improper bin");
-
-            auto present_arena_bin_id = entry.present_arenas.get_first_set(step_split_id);
-            if (present_arena_bin_id == entry.present_arenas.null_bit) {
-                return AcquiredTypedResource<FastArena>::no_resource();
-            }
-
-            auto& bin = entry.arenas[present_arena_bin_id];
-            CUW3_CHECK(!list_empty(&bin.list_head, FastArenaListOps{}), "invariant violation: bit set but list is empty");
-
-            auto* arena = FastArena::list_entry_to_arena(list_pop_head(&bin.list_head, FastArenaListOps{}));
-            auto arena_view = FastArenaView{arena};
-            arena_view.move_out_of_list();
-            if (list_empty(&bin.list_head, FastArenaListOps{})) {
-                entry.present_arenas.unset(present_arena_bin_id);
-            }
-            CUW3_CHECK(arena_view.can_allocate_aligned(size_aligned), "invariant violation: arena was placed in the improper bin");
-
-            return AcquiredTypedResource<FastArena>::acquired(arena);
+            return entry._acquire_bin_arena(step_split_id, size_aligned);
         }
 
         // returns pointer to the arena that is no longer used
         [[nodiscard]] FastArena* _try_update_cached_arena(FastArena* arena, uint64 alignment_id) {
-            CUW3_ASSERT(arena, "arena was null");
-            CUW3_ASSERT(check_alignment_id(alignment_id), "invalid alignment id");
+            CUW3_ASSERT(bins_info.check_alignment_id(alignment_id), "invalid alignment id");
 
-            // decision to use offered arena as a cached one
-            auto arena_view = FastArenaView{arena};
             auto& entry = step_split_entries[alignment_id];
-            if (!entry.cached_arena) {
-                if (FastArenaView{arena}.remaining() >= entry.min_alloc_size) {
-                    entry.cached_arena = arena;
-                    return nullptr;
-                }
-                return arena;
-            }
-
-            // decision to update existing arena
-            uint64 curr_remaining = FastArenaView{entry.cached_arena}.remaining();
-            uint64 new_remaining = arena_view.remaining();
-            if (new_remaining >= 2 * curr_remaining) {
-                entry.cache_misses = 0;
-                return std::exchange(entry.cached_arena, arena);
-            } else if (new_remaining > curr_remaining) {
-                entry.cache_misses++;
-                if (entry.cache_misses == 4) {
-                    entry.cache_misses = 0;
-                    return std::exchange(entry.cached_arena, arena);
-                }
-            }
-            return arena;
+            return entry._try_update_cached_arena(arena);
         }
 
         // arena is not in any list
-        void _put_into_bins(FastArena* arena, uint64 alignment_id) {
-            CUW3_ASSERT(arena, "arena was null");
-            CUW3_ASSERT(!FastArenaView{arena}.in_list(), "arena must not be in any list");
-            CUW3_ASSERT(check_alignment_id(alignment_id), "invalid alignment");
-
+        void _put_arena(FastArena* arena, uint64 alignment_id) {
+            CUW3_ASSERT(bins_info.check_alignment_id(alignment_id), "invalid alignment");
+            
             auto arena_view = FastArenaView{arena};
+            CUW3_ASSERT(!arena_view.resettable(), "arena must not be resettable");
+            
             auto& entry = step_split_entries[alignment_id];
-
-            auto step_split = locate_step_split_arena(arena_view.remaining());
-            if (step_split < entry.min_step_split_id) {
-                step_split = 0; // recycled arenas are stored here
-            }
-            auto& bin = entry.arenas[step_split];
-            list_push_head(&bin.list_head, arena_view.list_entry(), FastArenaListOps{});
-            entry.present_arenas.set(step_split);
+            auto step_split_id = bins_info.locate_step_split_arena_clamped(alignment_id, arena_view.remaining());
+            entry._put_arena(arena, step_split_id);
         }
 
         void _release_arena(FastArena* arena, uint64 alignment_id) {
@@ -742,13 +830,11 @@ namespace cuw3 {
             if (!arena) {
                 return;
             }
-            _put_into_bins(arena, alignment_id);
+            _put_arena(arena, alignment_id);
         }
 
         [[nodiscard]] AcquiredTypedResource<FastArena> _acquire_arena(uint64 size_aligned, uint64 alignment_id) {
-            CUW3_ASSERT(is_aligned(size_aligned, get_alignment(alignment_id)), "invalid size");
-            CUW3_ASSERT(check_alignment_id(alignment_id), "invalid alignment");
-            CUW3_ASSERT(can_allocate_aligned(size_aligned, alignment_id), "cannot allocate");
+            CUW3_ASSERT(bins_info.check_alignment_id(alignment_id), "invalid alignment");
 
             using enum AcquiredTypedResource<FastArena>::Status;
 
@@ -780,45 +866,37 @@ namespace cuw3 {
 
         // for testing purposes only
         bool _has_any_available_arenas(uint64 alignment_id) const {
-            CUW3_CHECK(check_alignment_id(alignment_id), "invalid alignment id");
+            CUW3_CHECK(bins_info.check_alignment_id(alignment_id), "invalid alignment id");
 
-            auto& entry = step_split_entries[alignment_id];
-            return entry.present_arenas.any_set(entry.min_step_split_id) || entry.cached_arena;
+            return step_split_entries[alignment_id]._has_any_available_arenas();
         }
 
         // for testing purposes only
-        [[nodiscard]] uint64 _sample_allocation_upper_bound(uint64 alignment_id, uint64 seed) const {
-            CUW3_CHECK(check_alignment_id(alignment_id), "invalid alignment id");
+        bool _has_any_available_arenas() const {
+            for (uint alignment_id = 0; alignment_id < bins_info.get_num_alignments(); alignment_id++) {
+                if (_has_any_available_arenas(alignment_id)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // for testing purposes only
+        [[nodiscard]] uint64 _sample_allocation_upper_bound(uint64 alignment_id) const {
+            CUW3_CHECK(bins_info.check_alignment_id(alignment_id), "invalid alignment id");
             
             auto& entry = step_split_entries[alignment_id];
-            uint64 step_split_id = entry.present_arenas.sample_set_bit(seed, entry.min_step_split_id);
-            if (step_split_id != entry.present_arenas.null_bit) {
-                auto info = step_split_id_to_info(step_split_id);
-                return info.get_step_split_size();
-            }
-            if (entry.cached_arena) {
-                return FastArenaView{entry.cached_arena}.remaining();
-            }
-            return 0;
-        }
 
-        // for testing purposes only
-        bool _is_allocator_empty() const {
-            for (uint alignment_id = 0; alignment_id < num_alignments; alignment_id++) {
-                auto& entry = step_split_entries[alignment_id];
-                if (entry.cached_arena) {
-                    return false;
-                }
-                if (!entry.present_arenas.all_reset()) {
-                    return false;
-                }
-                for (uint bin = 0; bin < num_step_splits; bin++) {
-                    if (!list_empty(&entry.arenas[bin], FastArenaListOps{})) {
-                        return false;
-                    }
-                }
+            uint64 upper_bound = 0;
+            if (entry.cached_arena) {
+                upper_bound = FastArenaView{entry.cached_arena}.remaining();
             }
-            return true;
+
+            auto step_split_id = entry._sample_largest_bin();
+            if (step_split_id != entry.null_step_split_id) {
+                upper_bound = std::max(upper_bound, bins_info.step_split_id_to_info(step_split_id).get_step_split_size());
+            }
+            return upper_bound;
         }
 
 
@@ -826,13 +904,13 @@ namespace cuw3 {
         // arena is removed from the data structure
         // may return null
         [[nodiscard]] AcquiredTypedResource<FastArena> acquire_arena(uint64 size, uint64 alignment) {
-            auto alignment_id = locate_alignment(alignment);
-            if (alignment_id == num_alignments) {
+            auto alignment_id = bins_info.locate_alignment(alignment);
+            if (alignment_id == bins_info.get_num_alignments()) {
                 return AcquiredTypedResource<FastArena>::failed();
             }
 
             uint64 size_aligned = align(size, alignment);
-            if (!can_allocate_aligned(size_aligned, alignment_id)) {
+            if (!bins_info.can_allocate_aligned(size_aligned, alignment_id)) {
                 return AcquiredTypedResource<FastArena>::failed();
             }
 
@@ -848,98 +926,33 @@ namespace cuw3 {
             CUW3_CHECK(!arena_view.in_list(), "arena must be out of any list");
             CUW3_CHECK(!arena_view.resettable(), "arena was empty, must have been recycled");
             
-            auto alignment_id = locate_alignment(arena_view.alignment());
-            CUW3_CHECK(check_alignment_id(alignment_id), "invalid alignment");
+            auto alignment_id = bins_info.locate_alignment(arena_view.alignment());
+            CUW3_CHECK(bins_info.check_alignment_id(alignment_id), "invalid alignment");
             CUW3_CHECK(arena_view.memory_size() >= step_split_entries[alignment_id].min_alloc_size, "arena is too fucking small");
 
             _release_arena(arena, alignment_id);
         }
 
         // arena is guaranteed to be in the data structure
-        // we are about to modify it 
+        // we are about to modify arena so internal invariant may become broken
         void extract_arena(FastArena* arena) {
             CUW3_CHECK(arena, "arena was null");
 
             auto arena_view = FastArenaView{arena};
-
-            auto alignment_id = locate_alignment(arena_view.alignment());
-            CUW3_CHECK(check_alignment_id(alignment_id), "invalid alignment");
+            auto alignment_id = bins_info.locate_alignment(arena_view.alignment());
+            CUW3_CHECK(bins_info.check_alignment_id(alignment_id), "invalid alignment");
 
             auto& entry = step_split_entries[alignment_id];
-            if (arena == entry.cached_arena) {
-                entry.cached_arena = nullptr;
+            if (entry._try_extract_cached_arena(arena)) {
                 return;
             }
 
-            // TODO : this shit repeats itself
-            auto step_split_id = locate_step_split_arena_clamped(alignment_id, arena_view.remaining());
-            list_erase(arena_view.list_entry(), FastArenaListOps{});
-            arena_view.move_out_of_list();
-            if (list_empty(&entry.arenas[step_split_id].list_head, FastArenaListOps{})) {
-                entry.present_arenas.unset(step_split_id);
-            }
-        }
-
-
-        // TODO : move allocate, deallocate to the allocator
-        // arena was either previously acquired or has just been created
-        // either way arena is not in the data structure
-        [[nodiscard]] void* allocate(AcquiredTypedResource<FastArena> arena, uint64 size) {
-            CUW3_CHECK(arena.status_acquired(), "arena was null");
-            return allocate(arena.get(), size);
-        }
-
-        // same as method above but used for fresh arenas
-        [[nodiscard]] void* allocate(FastArena* arena, uint64 size) {
-            CUW3_CHECK(arena, "arena was null");
-            CUW3_CHECK(size, "cannot make zero allocation");
-            
-            auto arena_view = FastArenaView{arena};
-            CUW3_CHECK(!arena_view.in_list(), "arena must not be in any list");
-            CUW3_CHECK(arena_view.empty() || !arena_view.resettable(), "arena must be either fresh (empty) or not resettable (we must have resetted it before)");
-
-            void* allocated = arena_view.acquire(size);
-            CUW3_CHECK(allocated, "arena must have had enough space");
-            
-            release_arena(arena);
-            return allocated;
-        }
-
-        // arena is retrieved externally (in some magic way)
-        // arena is in the data structure (either cached or in the bins)
-        // returns arena if it has become empty
-        [[nodiscard]] FastArena* deallocate(FastArena* arena, void* memory, uint64 size) {
-            CUW3_CHECK(arena, "arena was null");
-            CUW3_CHECK(size, "size was zero");
-
-            auto arena_view = FastArenaView{arena};
-            arena_view.release(memory, size);
-            if (!arena_view.resettable()) {
-                return nullptr;
+            auto step_split_id = bins_info.locate_step_split_arena_clamped(alignment_id, arena_view.remaining());
+            if (entry._try_extract_bin_arena(arena, step_split_id)) {
+                return;
             }
 
-            auto alignment_id = locate_alignment(arena_view.alignment());
-            CUW3_CHECK(check_alignment_id(alignment_id), "invalid arena alignment");
-
-            auto& entry = step_split_entries[alignment_id];
-            if (arena == entry.cached_arena) {
-                CUW3_CHECK(!arena_view.in_list(), "arena is cached so it must not be in any list");
-
-                entry.cached_arena = nullptr;
-                arena_view.reset();
-                return arena;
-            }
-
-            CUW3_CHECK(arena_view.in_list(), "arena must have been present in some bin");
-
-            auto step_split_id = locate_step_split_arena_clamped(alignment_id, arena_view.remaining());
-            list_erase(arena_view.list_entry(), FastArenaListOps{});
-            arena_view.move_out_of_list();
-            if (list_empty(&entry.arenas[step_split_id].list_head, FastArenaListOps{})) {
-                entry.present_arenas.unset(step_split_id);
-            }
-            arena_view.reset();
-            return arena;
+            CUW3_ABORT("unreachable reached: arena must have ben present in the bins");
         }
 
 
@@ -985,40 +998,40 @@ namespace cuw3 {
         };
 
 
-        [[nodiscard]] static FastArenaAllocator* create(const FastArenaAllocatorConfig& config) {
-            CUW3_CHECK_RETURN_VAL(config.memory, nullptr, "memory was null");
+        [[nodiscard]] static FastArenaAllocator* create(Memory memory, const FastArenaAllocatorConfig& config) {
+            CUW3_CHECK_RETURN_VAL(memory.fits<FastArenaAllocator>(), nullptr, "fast arena allocator: memory was null");
 
-            auto* allocator = new (config.memory) FastArenaAllocator{};
-            auto* bins = FastArenaBins::create(config.bins_config);
-            if (!bins) {
-                return nullptr;
-            }
-            (void)RetireReclaimEntryView::create(&allocator->retired_arenas.entry, (RetireReclaimRawPtr)RetireReclaimFlags::RetiredFlag);
+            auto* allocator = new (memory.get()) FastArenaAllocator{};
+            auto* bins = FastArenaBins::create(Memory::from(&allocator->fast_arena_bins), config.bins_config);
+            CUW3_CHECK_RETURN_VAL(bins, nullptr, "fast arena allocator: failed to create bins");
+
+            auto* retire_reclaim_entry = RetireReclaimEntryView::create(
+                Memory::from(&allocator->retired_arenas.entry),
+                (RetireReclaimRawPtr)RetireReclaimFlags::RetiredFlag
+            );
+            CUW3_CHECK_RETURN_VAL(retire_reclaim_entry, nullptr, "fast arena allocator: failed to create retire_reclaim_entry");
+
             return allocator;
         }
 
 
         // for testing purposes only
-        [[nodiscard]] uint64 _sample_allocation_upper_bound(uint64 alignment_id, uint64 seed) const {
-            uint64 upper_bound = fast_arena_bins._sample_allocation_upper_bound(alignment_id, seed);
-            if (upper_bound == 0) {
-                CUW3_CHECK(fast_arena_bins._has_any_available_arenas(alignment_id), "sample function does not work properly");
-            }
-            return upper_bound;
+        [[nodiscard]] uint64 _sample_allocation_upper_bound(uint64 alignment_id) const {
+            return fast_arena_bins._sample_allocation_upper_bound(alignment_id);
         }
 
         // for testing purposes only
         bool _is_allocator_empty() const {
-            return fast_arena_bins._is_allocator_empty();
+            return !fast_arena_bins._has_any_available_arenas();
         }
 
 
         bool supports_alignment(uint64 alignment) const {
-            return fast_arena_bins.check_alignment(alignment);
+            return fast_arena_bins.bins_info.check_alignment(alignment);
         }
 
         uint64 get_num_alignments() const {
-            return fast_arena_bins.num_alignments;
+            return fast_arena_bins.bins_info.get_num_alignments();
         }
 
         uint64 get_min_alignment() const {
@@ -1030,22 +1043,22 @@ namespace cuw3 {
         }
 
         uint64 get_alignment(uint64 alignment_id) const {
-            return fast_arena_bins.get_alignment(alignment_id);
+            return fast_arena_bins.bins_info.get_alignment(alignment_id);
         }
 
         uint64 get_min_alloc_size(uint64 alignment_id) const {
             if (alignment_id < get_num_alignments()) {
-                return fast_arena_bins.get_min_alloc_size(alignment_id);
+                return fast_arena_bins.bins_info.get_min_alloc_size(alignment_id);
             }
             return 0;
         }
 
         uint64 get_max_alloc_size() const {
-            return fast_arena_bins.get_global_max_alloc_size();
+            return fast_arena_bins.bins_info.get_global_max_alloc_size();
         }
 
         uint64 get_maxmin_alloc_size() const {
-            return fast_arena_bins.get_global_maxmin_alloc_size();
+            return fast_arena_bins.bins_info.get_global_maxmin_alloc_size();
         }
 
 
@@ -1054,27 +1067,56 @@ namespace cuw3 {
             return fast_arena_bins.acquire_arena(size, alignment);
         }
 
-        // returns allocated memory, expected to never return null
+        // arena was either previously acquired or has just been created
+        // either way arena is not in the data structure
         [[nodiscard]] void* allocate(AcquiredTypedResource<FastArena> arena, uint64 size) {
-            return fast_arena_bins.allocate(arena, size);
+            return allocate(arena.get(), size);
         }
 
-        // returns allocated memory, expected to never be null
+        // same as method above but used for fresh arenas
         [[nodiscard]] void* allocate(FastArena* arena, uint64 size) {
-            return fast_arena_bins.allocate(arena, size);
+            CUW3_CHECK(arena, "arena was null");
+            CUW3_CHECK(size, "cannot make zero allocation");
+            
+            auto arena_view = FastArenaView{arena};
+            CUW3_CHECK(!arena_view.in_list(), "arena must not be in any list");
+            CUW3_CHECK(arena_view.empty() || !arena_view.resettable(), "arena must be either fresh (empty) or not resettable (we must have resetted it before)");
+
+            void* allocated = arena_view.acquire(size);
+            CUW3_CHECK(allocated, "arena must have had enough space");
+            
+            fast_arena_bins.release_arena(arena);
+            return allocated;
         }
 
-        // returns empty arena or null
+        // arena is retrieved externally (in some magic way)
+        // arena is in the data structure (either cached or in the bins)
+        // resets resettable arena and returns it
         [[nodiscard]] FastArena* deallocate(FastArena* arena, void* memory, uint64 size) {
-            return fast_arena_bins.deallocate(arena, memory, size);
+            CUW3_CHECK(arena, "arena was null");
+            CUW3_CHECK(memory, "null memory deallocation is not allowed");
+            CUW3_CHECK(size, "size was zero");
+
+            // dementia reminder: does not affect remaining() that's why we dont need to rearrange bins!
+            auto arena_view = FastArenaView{arena};
+            arena_view.release(memory, size);
+            if (!arena_view.resettable()) {
+                return nullptr;
+            }
+
+            // arena became resettable we must extract it from the bins
+            fast_arena_bins.extract_arena(arena);
+            arena_view.reset();
+            return arena;
         }
 
         // called from the non-owning thread
         // puts retired arenas in the list
         // arena pointer is stored as is - no offsetting will be required on reclaim
         [[nodiscard]] RetireReclaimPtr retire(FastArena* arena, void* memory, uint64 size) {
-            CUW3_ASSERT(arena, "arena was null");
-            CUW3_ASSERT(size, "size was zero");
+            CUW3_CHECK(arena, "arena was null");
+            CUW3_CHECK(memory, "memory was null");
+            CUW3_CHECK(size, "size was zero");
 
             auto arena_view = FastArenaView{arena};
             auto old_resource = arena_view.retire_allocation(memory, size);
@@ -1088,12 +1130,27 @@ namespace cuw3 {
 
         // called by the owning thread
         // returns list of arenas
-        [[nodiscard]] FastArenaReclaimList reclaim() {
+        [[nodiscard]] FastArenaReclaimList reclaim_arenas() {
             if (retired_arenas.entry.next_postponed) {
                 return {(FastArena*)std::exchange(retired_arenas.entry.next_postponed, nullptr)};
             }
             auto retired_arenas_view = RetireReclaimPtrView{&retired_arenas.entry.head};
             return {retired_arenas_view.reclaim().ptr<FastArena>()};
+        }
+
+        // called by the owning thread
+        [[nodiscard]] FastArena* reclaim_arena(FastArena* arena) {
+            fast_arena_bins.extract_arena(arena);
+            
+            auto arena_view = FastArenaView{arena};
+            arena_view.reclaim_allocations();
+            if (arena_view.resettable()) {
+                arena_view.reset();
+                return arena;
+            }
+
+            fast_arena_bins.release_arena(arena);
+            return nullptr;
         }
 
         void postpone(FastArenaReclaimList list) {

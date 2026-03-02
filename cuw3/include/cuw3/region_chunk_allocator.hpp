@@ -8,6 +8,7 @@
 #include "backoff.hpp"
 #include "region_chunk_handle.hpp"
 
+// !TODO!TODO!TODO!: add handle_index array to region_chunk_allocator
 // TODO : maybe unite specs & pools & state
 namespace cuw3 {
     inline constexpr uint32 region_chunk_allocator_null_value = 0xFFFFFFFF;
@@ -461,6 +462,7 @@ namespace cuw3 {
             return divpow2(subptr(handle, handles), specs->handle_size_log2);
         }
 
+        // TODO : may need launder
         [[nodiscard]] void* handle_from_index(uint32 index) {
             if (index >= specs->num_handles) {
                 return nullptr;

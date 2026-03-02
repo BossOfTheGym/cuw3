@@ -2,8 +2,9 @@
 
 #include <atomic>
 
-#include "cuw3/funcs.hpp"
 #include "ptr.hpp"
+#include "utils.hpp"
+#include "funcs.hpp"
 #include "assert.hpp"
 
 namespace cuw3 {
@@ -223,14 +224,20 @@ namespace cuw3 {
         int32 base_offset{};
     };
 
-    // type 0 is resreved
+    // type 0 is reserved
     struct RetireReclaimEntryView {
-        [[nodiscard]] static RetireReclaimEntryView create(void* location, RetireReclaimRawPtr initial_flags, uint32 type_label = 0, int32 base_offset = 0) {
-            auto* entry = new (location) RetireReclaimEntry{};
+        [[nodiscard]] static RetireReclaimEntry* create(Memory memory, RetireReclaimRawPtr initial_flags, uint32 type_label = 0, int32 base_offset = 0) {
+            CUW3_CHECK_RETURN_VAL(memory.fits<RetireReclaimEntry>(), nullptr, "invalid memory");
+
+            auto* entry = new (memory.get()) RetireReclaimEntry{};
             entry->head = RetireReclaimPtr::packed(nullptr, initial_flags);
             entry->type_label = type_label;
             entry->base_offset = base_offset;
-            return {entry};
+            return entry;
+        }
+
+        [[nodiscard]] static RetireReclaimEntryView create_view(Memory memory, RetireReclaimRawPtr initial_flags, uint32 type_label = 0, int32 base_offset = 0) {
+            return {create(memory, initial_flags, type_label)};
         }
 
         RetireReclaimEntry* entry{};

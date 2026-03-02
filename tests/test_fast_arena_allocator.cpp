@@ -61,14 +61,11 @@ namespace fast_arena_tests {
             FastArenaConfig config = {
                 .owner = &dummy_owner,
 
-                .arena_handle = &arena,
                 .arena_memory = vmem_ptr.get(),
-
-                .arena_handle_size = conf_control_block_size,
-                .arena_alignment = alignment,
                 .arena_memory_size = vmem_ptr.get_deleter().size,
+                .arena_alignment = alignment,
             };
-            CUW3_CHECK(FastArenaView::create_fast_arena(config), "Failed to create arena");
+            CUW3_CHECK(FastArenaView::create(Memory::from(&arena), config), "Failed to create arena");
         }
 
         [[nodiscard]] FastArenaAllocation allocate(uint64 size) {
@@ -371,6 +368,7 @@ namespace fast_arena_tests {
     }
 }
 
+
 namespace fast_arena_allocator_tests {
     // TODO : owner
     // TODO : storage for memory & handles
@@ -539,7 +537,6 @@ namespace fast_arena_allocator_tests {
     struct alignas(region_chunk_handle_header_ptr_alignment) TestFastArenaAllocator {
         TestFastArenaAllocator(uint num_arenas, uint arena_size) : arena_storage(num_arenas, arena_size) {
             FastArenaAllocatorConfig allocator_config{};
-            allocator_config.memory = &allocator;
 
             auto& bins_config = allocator_config.bins_config;
             bins_config.num_splits_log2 = 7;
@@ -548,8 +545,8 @@ namespace fast_arena_allocator_tests {
             bins_config.min_arena_alignment_log2 = 4;
             bins_config.max_arena_alignment_log2 = 9;
 
-            (void)FastArenaAllocator::create(allocator_config);
-
+            auto* check = FastArenaAllocator::create(Memory::from(&allocator), allocator_config);
+            CUW3_CHECK(check, "failed to create allocator");
             CUW3_CHECK(allocator.get_maxmin_alloc_size() <= arena_size, "invalid arena size");
         }
         
@@ -559,10 +556,8 @@ namespace fast_arena_allocator_tests {
             config.arena_alignment = alignment;
             config.arena_memory = arena;
             config.arena_memory_size = arena_storage.arena_size;
-            config.arena_handle = handle;
-            config.arena_handle_size = conf_control_block_size;
 
-            auto* created = FastArenaView::create_fast_arena(config);
+            auto* created = FastArenaView::create(Memory{handle, sizeof(FastArena)}, config);
             CUW3_CHECK(created, "failed to create arena");
             return created;
         }
@@ -593,17 +588,13 @@ namespace fast_arena_allocator_tests {
         }
 
         void retire(void* ptr, uint64 size) {
+            // TODO
 
         }
 
         void reclaim() {
-            auto reclaim_list = allocator.reclaim();
-            while (!reclaim_list.empty()) {
-                auto* arena = reclaim_list.pop();
-
-                auto arena_view = FastArenaView{arena};
-                arena_view.reclaim_allocations();
-            }
+            // TODO
+            
         }
 
 
@@ -644,8 +635,8 @@ namespace fast_arena_allocator_tests {
             return arena_storage.num_arenas;
         }
 
-        uint64 sample_allocation_upper_bound(uint64 alignment_id, uint64 sample_seed) const {
-            return allocator._sample_allocation_upper_bound(alignment_id, sample_seed);
+        uint64 sample_allocation_upper_bound(uint64 alignment_id) const {
+            return allocator._sample_allocation_upper_bound(alignment_id);
         }
 
 
@@ -676,8 +667,7 @@ namespace fast_arena_allocator_tests {
         [[nodiscard]] TestFastArenaRandomAllocation allocate(uint64 lower_bound = 0) {
             uint64 alignment_id = gen() % get_num_alignments();
             uint64 alignment = get_alignment(alignment_id);
-            uint64 sample_seed = gen();
-            uint64 upper_bound = sample_allocation_upper_bound(alignment_id, sample_seed);
+            uint64 upper_bound = sample_allocation_upper_bound(alignment_id);
             uint64 min_alloc_size = get_min_alloc_size(alignment_id);
 
             CUW3_CHECK(upper_bound == 0 || upper_bound >= min_alloc_size, "invalid upper bound sampled");
@@ -727,17 +717,18 @@ namespace fast_arena_allocator_tests {
     };
 
     void test_fast_arena_bins_location() {
-        FastArenaBins bins{};
+        using FastArenaBinsInfo = FastArenaBins::FastArenaBinsInfo;
+
+        FastArenaBinsInfo bins{};
 
         FastArenaBinsConfig config{};
-        config.memory = &bins;
         config.num_splits_log2 = 7;
         config.min_arena_step_size_log2 = 9;
         config.max_arena_step_size_log2 = 15;
         config.min_arena_alignment_log2 = conf_fast_arena_min_alignment_pow2;
         config.max_arena_alignment_log2 = conf_fast_arena_max_alignment_pow2;
 
-        CUW3_CHECK(FastArenaBins::create(config), "failed to initialize arena");
+        CUW3_CHECK(FastArenaBinsInfo::create(Memory::from(&bins), config), "failed to initialize arena");
 
         // sizes
         {

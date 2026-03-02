@@ -2,6 +2,7 @@
 
 #include "ptr.hpp"
 #include "conf.hpp"
+#include "utils.hpp"
 
 namespace cuw3 {
     // *** implementation forethought ***
@@ -59,6 +60,7 @@ namespace cuw3 {
         RegionChunkHandleHeaderData data{}; // atomic memory location/readonly memory location
     };
 
+    // TODO: remove this garbage (do not remove this garbage, think a little)
     // memory order can be relaxed here: no memory operation should depend on modification of distinct chunk handle
     // (we do stricter memory accesses on shared data structures (list) anyway)
     struct RegionChunkHandleHeaderView {
@@ -105,14 +107,22 @@ namespace cuw3 {
         RegionChunkHandleHeader* header{};
     };
 
+    // TODO: remove this garbage
     // region chunk header always goes first
     // this function zero initializes wohle handle without touching handle itself as (even though not crictical) introduces a race
     // race can be considered 'safe' as there will be only threads possibly reading the value
     template<class T>
-    T* initz_region_chunk_handle(void* chunk_handle, gsize chunk_handle_size) {
-        CUW3_ASSERT(chunk_handle_size >= conf_region_handle_size, "too little space for a chunk handle");
-        std::memset(advance_ptr(chunk_handle, sizeof(RegionChunkHandleHeader)), 0x00, chunk_handle_size - sizeof(RegionChunkHandleHeader));
-        return (T*)chunk_handle;
+    T* initz_region_chunk_handle(Memory memory) {
+        CUW3_CHECK_RETURN_VAL(memory.fits<T>(conf_region_handle_size, region_chunk_handle_header_ptr_alignment), "inappropriate memory for chunk handle");
+
+        // WARNING! THIS IS HACKY PARTIAL C-STYLE INITIALIZATION!
+        // we have to do this because some other threads....
+        // TODO : this must be rechecked
+        // TODO : leave a dementia comment here explaining why this is crucial
+        std::memset(
+            advance_ptr(memory.get(), sizeof(RegionChunkHandleHeader)), 0x00, memory.size() - sizeof(RegionChunkHandleHeader)
+        );
+        return (T*)memory.get();
     }
 
     enum class RegionChunkType : uint32 {

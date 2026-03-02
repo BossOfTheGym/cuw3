@@ -101,9 +101,6 @@ namespace cuw3 {
     struct PoolShardPoolConfig {
         void* owner{};
 
-        void* handle{};
-        gsize handle_size{}; // must be initialized to conf_control_block_size
-
         void* shard_pool_memory{};
         gsize shard_pool_memory_size{};
 
@@ -134,26 +131,23 @@ namespace cuw3 {
     // we would require some more advanced approach (at least we would have to use offset and type fields of the retire-reclaim entry)
     // location of shard_memory can be restored from the location of shard_handle
     struct PoolShardPoolView {
-        [[nodiscard]] static PoolShardPoolView create(const PoolShardPoolConfig& config) {
-            // TODO : maybe insert an alignment assert here?
-            CUW3_ASSERT(config.owner, "owner is null");
-            CUW3_ASSERT(config.handle, "handle is null");
-            CUW3_ASSERT(config.shard_pool_memory, "shard pool memory is null");
-            CUW3_ASSERT(config.shard_pool_handles, "shard pool handles is null");
+        [[nodiscard]] static PoolShardPool* create(Memory memory, const PoolShardPoolConfig& config) {
+            CUW3_CHECK_RETURN_VAL(memory.fits<PoolShardPool>(), nullptr, "pool_shard_pool: invalid memory");
 
-            CUW3_ASSERT(is_aligned(config.handle, conf_cacheline), "insufficient alignment for handle memory");
-            CUW3_ASSERT(config.handle_size == conf_control_block_size, "invalid size for control block");
-            
-            CUW3_ASSERT(is_pow2(config.pool_shard_size), "pool shard is not power of 2");
+            CUW3_CHECK_RETURN_VAL(config.owner, nullptr, "pool_shard_pool: owner is null");
+            CUW3_CHECK_RETURN_VAL(config.shard_pool_memory, nullptr, "pool_shard_pool: shard pool memory is null");
+            CUW3_CHECK_RETURN_VAL(config.shard_pool_handles, nullptr, "pool_shard_pool: shard pool handles is null");
+
+            CUW3_CHECK_RETURN_VAL(is_pow2(config.pool_shard_size), nullptr, "pool_shard_pool: pool shard is not power of 2");
             
             uint32 pool_shard_size_log2 = intlog2(config.pool_shard_size);
             uint32 expected_num_handles = divpow2(config.shard_pool_memory_size, pool_shard_size_log2);
             uint32 given_num_handles = config.shard_pool_handles_size / conf_control_block_size;
 
-            CUW3_ASSERT(is_aligned(config.shard_pool_handles, conf_cacheline), "insufficient alignment for shard pool handles");
-            CUW3_ASSERT(given_num_handles >= expected_num_handles, "insufficient space for handles was provided");
+            CUW3_CHECK_RETURN_VAL(is_aligned(config.shard_pool_handles, conf_cacheline), nullptr, "pool_shard_pool: insufficient alignment for shard pool handles");
+            CUW3_CHECK_RETURN_VAL(given_num_handles >= expected_num_handles, nullptr, "pool_shard_pool: insufficient space for handles was provided");
 
-            auto* pool = initz_region_chunk_handle<PoolShardPool>(config.handle, config.handle_size);
+            auto* pool = new (memory.get()) PoolShardPool{};
             RegionChunkHandleHeaderView{&pool->region_chunk_header}.start_chunk_lifetime(config.owner, (uint64)RegionChunkType::PoolShardPool);
 
             pool->shard_pool.top = 0;
@@ -167,8 +161,14 @@ namespace cuw3 {
             pool->shard_pool_handles = config.shard_pool_handles;
             pool->shard_pool_memory = config.shard_pool_memory;
 
-            (void)RetireReclaimEntryView::create(&pool->retire_reclaim_entry, config.retire_reclaim_flags, (uint32)RegionChunkType::PoolShardPool, offsetof(PoolShardPool, retire_reclaim_entry));
-            return {pool};
+            auto* retire_reclaim_entry = RetireReclaimEntryView::create(Memory::from(&pool->retire_reclaim_entry), config.retire_reclaim_flags, (uint32)RegionChunkType::PoolShardPool, offsetof(PoolShardPool, retire_reclaim_entry));
+            CUW3_CHECK_RETURN_VAL(retire_reclaim_entry, nullptr, "pool_shard_pool: failed to craete retire_reclaim_entry");
+
+            return pool;
+        }
+
+        [[nodiscard]] static PoolShardPoolView create_view(Memory memory, const PoolShardPoolConfig& config) {
+            return {create(memory, config)};
         }
 
 
@@ -297,9 +297,6 @@ namespace cuw3 {
 
 
     struct ChunkPoolConfig {
-        void* pool_handle{};
-        gsize pool_handle_size{};
-
         void* pool_memory{};
         gsize pool_memory_size{};
 
@@ -313,18 +310,18 @@ namespace cuw3 {
     using ChunkPoolBackoff = SimpleBackoff;
 
     struct ChunkPoolView {
-        [[nodiscard]] static ChunkPoolView create(const ChunkPoolConfig& config) {
-            CUW3_ASSERT(config.pool_handle, "pool handle is null");
-            CUW3_ASSERT(config.pool_memory, "pool memory is null");
-            CUW3_ASSERT(config.pool_handle_size == conf_control_block_size, "invalid size of pool handle memory");
-            CUW3_ASSERT(config.pool_memory_size >= config.chunk_size, "pool must contain at least one chunk");
-            
-            CUW3_ASSERT(is_pow2(config.pool_memory_size), "chunk pool memory size is not power of 2");
-            CUW3_ASSERT(is_alignment(config.chunk_alignment), "invalid chunk alignment");
-            CUW3_ASSERT(is_aligned(config.pool_memory, config.chunk_alignment), "chunk memory must be aligned to chunk alignment");
-            CUW3_ASSERT(config.chunk_size >= conf_min_alloc_size, "too small chunk size");
+        [[nodiscard]] static ChunkPool* create(Memory memory, const ChunkPoolConfig& config) {
+            CUW3_CHECK_RETURN_VAL(memory.fits<ChunkPool>(), nullptr, "chunk_pool: invalid memory");
 
-            auto* pool = new (config.pool_handle) ChunkPool{};
+            CUW3_CHECK_RETURN_VAL(config.pool_memory, nullptr, "chunk_pool: pool memory is null");
+            CUW3_CHECK_RETURN_VAL(config.pool_memory_size >= config.chunk_size, nullptr, "chunk_pool: pool must contain at least one chunk");
+            
+            CUW3_CHECK_RETURN_VAL(is_pow2(config.pool_memory_size), nullptr, "chunk pool memory size is not power of 2");
+            CUW3_CHECK_RETURN_VAL(is_alignment(config.chunk_alignment), nullptr, "invalid chunk alignment");
+            CUW3_CHECK_RETURN_VAL(is_aligned(config.pool_memory, config.chunk_alignment), nullptr, "chunk memory must be aligned to chunk alignment");
+            CUW3_CHECK_RETURN_VAL(config.chunk_size >= conf_min_alloc_size, nullptr, "too small chunk size");
+
+            auto* pool = new (memory.get()) ChunkPool{};
             pool->chunks_memory_size = config.pool_memory_size;
             pool->chunk_size_log2 = is_pow2(config.chunk_size) ? intlog2(config.chunk_size) : 0;
             pool->chunk_size = config.chunk_size;
@@ -337,8 +334,14 @@ namespace cuw3 {
             pool->chunk_pool.head = pool->chunk_pool.capacity;
 
             // type can be null here as there are no other entry types
-            (void)RetireReclaimEntryView::create(&pool->retire_reclaim_entry, config.retire_reclaim_flags, 0, offsetof(ChunkPool, retire_reclaim_entry));
-            return {pool};
+            auto* retire_reclaim_entry = RetireReclaimEntryView::create(Memory::from(&pool->retire_reclaim_entry), config.retire_reclaim_flags, 0, offsetof(ChunkPool, retire_reclaim_entry));
+            CUW3_CHECK_RETURN_VAL(retire_reclaim_entry, nullptr, "chunk_pool: failed to create retire reclaim entry");
+
+            return pool;
+        }
+
+        [[nodiscard]] static ChunkPoolView create_view(Memory memory, const ChunkPoolConfig& config) {
+            return {create(memory, config)};
         }
 
         void* _index_to_chunk(uint32 index) {

@@ -208,6 +208,22 @@ namespace cuw3 {
             CUW3_ABORT("unreachable");
         }
 
+        gsize get_last_set_bit(gsize start = 0) const {
+            CUW3_ASSERT(start < bit_capacity, "invalid bit");
+
+            ssize curr = bit_capacity;
+            ssize last = start;
+            while (curr > last) {
+                ssize next = std::max(align(curr - bit_capacity, bit_capacity), last);
+                gsize mask = bitmask(next % bin_size, next % bin_size + curr - next);
+                gsize masked = bins[next / bin_size] & mask;
+                if (masked) {
+                    return next + intlog2(masked);
+                }
+            }
+            return null_bit;
+        }
+
         T bins[bin_capacity] = {};
     };
 }
