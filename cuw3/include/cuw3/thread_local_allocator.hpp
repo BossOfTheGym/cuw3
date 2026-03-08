@@ -6,7 +6,6 @@
 #include "backoff.hpp"
 #include "cuw3/atomic.hpp"
 #include "retire_reclaim.hpp"
-#include "pool_allocator.hpp"
 #include "region_chunk_handle.hpp"
 #include "fast_arena_allocator.hpp"
 

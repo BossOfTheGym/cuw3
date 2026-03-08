@@ -20,9 +20,6 @@ target_link_libraries(test_fast_arena_allocator cuw3)
 add_executable_ext(test_funcs test_funcs.cpp)
 target_link_libraries(test_funcs cuw3)
 
-add_executable_ext(test_pool_allocator test_pool_allocator.cpp)
-target_link_libraries(test_pool_allocator cuw3)
-
 add_executable_ext(test_region_chunk_allocator test_region_chunk_allocator.cpp)
 target_link_libraries(test_region_chunk_allocator cuw3)
 

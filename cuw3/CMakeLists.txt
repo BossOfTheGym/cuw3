@@ -8,7 +8,6 @@ set(CUW3_LIB_HEADERS
     include/cuw3/fast_arena_allocator.hpp
     include/cuw3/funcs.hpp
     include/cuw3/list.hpp
-    include/cuw3/pool_allocator.hpp
     include/cuw3/ptr.hpp
     include/cuw3/region_chunk_allocator.hpp
     include/cuw3/region_chunk_handle.hpp
