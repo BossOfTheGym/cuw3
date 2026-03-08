@@ -130,7 +130,7 @@ namespace cuw3 {
         template<class ... Flag>
         static RetireReclaimPtr data_with_flags(RetireReclaimRawPtr data, Flag ... flag) {
             auto flags = (0 | ... | (RetireReclaimRawPtr)flag);
-            return RetireReclaimPtr::packed(data, flags);
+            return RetireReclaimPtr::packed_shifted(data, flags);
         }
 
         // called by reclaiming thread
@@ -147,6 +147,23 @@ namespace cuw3 {
             // all the other flags are not touched too
             // so instead of cas we can copy flags, set pointer to null and use exchange instead
             auto resource_new = ptr_with_flags(nullptr, resource_old.data());
+            return resource_ref.exchange(resource_new, std::memory_order_acq_rel);
+        }
+
+        // called by reclaiming thread
+        // called when we are reclaiming subresource
+        // retired flag must be set!
+        // can be used with number resource as well
+        [[nodiscard]] RetireReclaimPtr reclaim_reset() {
+            auto resource_ref = std::atomic_ref{*resource};
+            auto resource_old = resource_ref.load(std::memory_order_relaxed);
+
+            CUW3_CHECK(RetireReclaimFlagsHelper{resource_old.data()}.retired(), "retired flag must have been set!");
+
+            // retired is set, nobody can reset it
+            // all the other flags are not touched too
+            // so instead of cas we can copy flags, set pointer to null and use exchange instead
+            auto resource_new = ptr_with_flags(nullptr, 0);
             return resource_ref.exchange(resource_new, std::memory_order_acq_rel);
         }
 
@@ -176,7 +193,7 @@ namespace cuw3 {
             auto resource_ref = std::atomic_ref{*resource};
             auto resource_old = resource_ref.load(std::memory_order_relaxed);
             while (true) {
-                auto resource_new = ptr_with_flags(resource, resource_old.data(), RetireReclaimFlags::RetiredFlag);
+                auto resource_new = ptr_with_flags(retired, resource_old.data(), RetireReclaimFlags::RetiredFlag);
 
                 resource_ops.set_next(retired, resource_old.ptr());
                 if (resource_ref.compare_exchange_strong(resource_old, resource_new, std::memory_order_acq_rel, std::memory_order_relaxed)) {

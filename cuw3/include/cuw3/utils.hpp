@@ -32,7 +32,7 @@ namespace cuw3 {
         }
 
         bool empty() const {
-            return _ptr;
+            return !_ptr;
         }
 
 

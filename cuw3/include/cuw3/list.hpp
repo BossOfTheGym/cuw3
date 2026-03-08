@@ -172,6 +172,7 @@ namespace cuw3 {
         DefaultListEntry* next{};
     };
 
+    // TODO : const correctness for get_next and get_prev? seems like it must never use const
     template<class Node>
     struct DefaultListOps {
         Node* get_prev(Node* node) {
@@ -190,11 +191,11 @@ namespace cuw3 {
             node->next = next;
         }
 
-        bool ref_equals(Node* node1, Node* node2) {
+        bool ref_equals(const Node* node1, const Node* node2) {
             return node1 == node2;
         }
 
-        bool self_equals(Node* node) {
+        bool self_equals(const Node* node) {
             return node->prev == node && node->next == node;
         }
     };
