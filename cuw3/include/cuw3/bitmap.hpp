@@ -141,7 +141,6 @@ namespace cuw3 {
             return bins[bit / bin_size] >> (bit % bin_size) & 1;
         }
 
-        // TODO : test this motherfucker too
         bool any_set(gsize start = 0) const {
             CUW3_ASSERT(start < bit_capacity, "invlaid bit");
 
@@ -198,7 +197,7 @@ namespace cuw3 {
                     for (gsize i = 0; i < bit - skipped; i++) {
                         corrected &= corrected - 1;
                     }
-                    gsize result = curr + std::countr_zero(corrected);
+                    gsize result = align_down(curr, bin_size) + std::countr_zero(corrected);
                     return result;
                 }
                 skipped += bits_in_range;
@@ -210,18 +209,17 @@ namespace cuw3 {
             CUW3_ABORT("unreachable");
         }
 
-        // TODO : test this motherfucker
         gsize get_last_set_bit(gsize start = 0) const {
             CUW3_ASSERT(start < bit_capacity, "invalid bit");
 
             ssize curr = bit_capacity;
             ssize last = start;
             while (curr > last) {
-                ssize next = std::max<ssize>(align(curr - bit_capacity, bin_size), last);
+                ssize next = std::max<ssize>(align(curr - bin_size, bin_size), last);
                 gsize mask = bitmask(next % bin_size, next % bin_size + curr - next);
                 gsize masked = bins[next / bin_size] & mask;
                 if (masked) {
-                    return next + intlog2(masked);
+                    return align_down(next, bin_size) + intlog2(masked);
                 }
                 curr = next;
             }

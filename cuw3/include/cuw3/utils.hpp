@@ -45,7 +45,7 @@ namespace cuw3 {
         }
 
         explicit operator bool() const {
-            return empty();
+            return !empty();
         }
 
 
