@@ -52,4 +52,62 @@ namespace cuw3 {
         void* _ptr{};
         uintptr _size{};
     };
+
+    struct AcquiredResource {
+        enum class Status {
+            Failed,
+            Acquired,
+            NoResource,
+        };
+
+        static AcquiredResource acquired(void* resource) {
+            return {Status::Acquired, resource};
+        }
+
+        static AcquiredResource no_resource() {
+            return {Status::NoResource};
+        }
+
+        static AcquiredResource failed() {
+            return {Status::Failed};
+        }
+
+        void* get() const {
+            return resource;
+        }
+
+        bool status_failed() const {
+            return status == Status::Failed;
+        }
+
+        bool status_acquired() const {
+            return status == Status::Acquired;
+        }
+
+        bool status_no_resource() const {
+            return status == Status::NoResource;
+        }
+
+        Status status{};
+        void* resource{};
+    };
+
+    template<class T>
+    struct AcquiredTypedResource : AcquiredResource {
+        static AcquiredTypedResource acquired(void* resource) {
+            return {AcquiredResource::acquired(resource)};
+        }
+
+        static AcquiredTypedResource no_resource() {
+            return {AcquiredResource::no_resource()};
+        }
+
+        static AcquiredTypedResource failed() {
+            return {AcquiredResource::failed()};
+        }
+
+        T* get() const {
+            return (T*)AcquiredResource::get();
+        }
+    };
 }

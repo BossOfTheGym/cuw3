@@ -1,6 +1,3 @@
-* test thread graveyard
-
-
 * implement special fast arena bin for small allocations (less than min_alloc_size)
 * test it
 
@@ -9,9 +6,4 @@
 * implement malloc/free
 
 
-
-
-
-
-
-* gtest
+* gtest (fuck gtest)

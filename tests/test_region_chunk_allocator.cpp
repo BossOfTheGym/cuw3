@@ -154,38 +154,6 @@ void test_region_allocator_pools() {
     }
 }
 
-
- struct VMemDeleter {
-    void operator()(void* ptr) const {
-        vmem_free(ptr, size);
-    }
-
-    uint64 size{};
-};
-
-using VMemPtrBase = std::unique_ptr<void, VMemDeleter>;
-
-struct VMemPtr : VMemPtrBase {
-    using VMemPtrBase::VMemPtrBase;
-
-    static VMemPtr create(uint64 size) {
-        size = align(size, vmem_page_size());
-        void* ptr = vmem_alloc(size, VMemAllocType::VMemReserveCommit);
-        if (!ptr) {
-            return {};
-        }
-        return {ptr, VMemDeleter{size}};
-    }
-
-    void* ptr() const {
-        return get();
-    }
-
-    uint64 size() const {
-        return get_deleter().size;
-    }
-};
-
 struct TestRegionChunkAllocator {
     TestRegionChunkAllocator() {
         constexpr uint32 num_regions = 8;

@@ -33,6 +33,7 @@ namespace cuw3 {
 
     using ThreadGravePtr = AlignmentPackedPtr<ThreadGraveRawPtr, 1>;
     
+    // TODO : rework statuses
     struct ThreadGravePtrHelper {
         static ThreadGravePtr acquired_state() { return ThreadGravePtr::packed(nullptr, (ThreadGraveRawPtr)ThreadGravePtrFlags::Acquired); }
         static ThreadGravePtr empty_state() { return {}; }
@@ -41,9 +42,12 @@ namespace cuw3 {
 
         ThreadGravePtrHelper(ThreadGravePtr ptr) : _ptr{ptr} {}
 
+        bool valid_state() const { return !(_ptr.ptr() && acquired()); }
         bool acquired() const { return flags() & (ThreadGraveRawPtr)ThreadGravePtrFlags::Acquired; }
-        bool valid() const { return !(_ptr.ptr() && acquired()); }
-        bool empty() const { return !_ptr.ptr(); }
+        bool has_ptr() const { return _ptr.ptr(); }
+        bool grave_acquired() const { return _ptr.ptr() && !acquired(); }
+        bool occupied() const { return acquired() || has_ptr(); }
+        bool empty() const { return !has_ptr() && !acquired(); }
 
         ThreadGraveRawPtr flags() const { return _ptr.alignment(); }
         void* thread() const { return _ptr.ptr(); }
@@ -56,15 +60,15 @@ namespace cuw3 {
         [[nodiscard]] ThreadGravePtr try_acquire() {
             auto grave_ptr_ref = std::atomic_ref{*grave_ptr};
             auto grave_ptr_old = grave_ptr_ref.load(std::memory_order_relaxed);
-            CUW3_CHECK(ThreadGravePtrHelper{grave_ptr_old}.valid(), "invalid grave state detected");
+            CUW3_CHECK(ThreadGravePtrHelper{grave_ptr_old}.valid_state(), "invalid grave state detected");
 
-            if (ThreadGravePtrHelper{grave_ptr_old}.empty()) {
+            if (!ThreadGravePtrHelper{grave_ptr_old}.has_ptr()) {
                 return grave_ptr_old;
             }
 
             auto grave_ptr_new = ThreadGravePtrHelper::acquired_state();
             grave_ptr_old = grave_ptr_ref.exchange(grave_ptr_new, std::memory_order_acq_rel);
-            CUW3_CHECK(ThreadGravePtrHelper{grave_ptr_old}.valid(), "invalid grave state detected");
+            CUW3_CHECK(ThreadGravePtrHelper{grave_ptr_old}.valid_state(), "invalid grave state detected");
 
             return grave_ptr_old;
         }
@@ -73,10 +77,10 @@ namespace cuw3 {
         bool try_put_thread(void* thread) {
             auto grave_ptr_ref = std::atomic_ref{*grave_ptr};
             auto grave_ptr_old = grave_ptr_ref.load(std::memory_order_relaxed);
-            auto grave_ptr_new = ThreadGravePtr::packed(thread, 0);
-            if (!ThreadGravePtrHelper{grave_ptr_old}.empty()) {
+            if (ThreadGravePtrHelper{grave_ptr_old}.occupied()) {
                 return false;
             }
+            auto grave_ptr_new = ThreadGravePtr::packed(thread, 0);
             return grave_ptr_ref.compare_exchange_strong(grave_ptr_old, grave_ptr_new, std::memory_order_acq_rel, std::memory_order_relaxed);
         }
 
@@ -87,8 +91,7 @@ namespace cuw3 {
 
             auto grave_ptr_ref = std::atomic_ref{*grave_ptr};
             auto grave_ptr_old = grave_ptr_ref.exchange(grave_ptr_new, std::memory_order_acq_rel);
-            CUW3_CHECK(ThreadGravePtrHelper{grave_ptr_old}.valid(), "invalid grave state detected");
-            CUW3_CHECK(ThreadGravePtrHelper{grave_ptr_old}.acquired(), "grave must have been in acquired state");
+            CUW3_CHECK(ThreadGravePtrHelper{grave_ptr_old}.valid_state(), "invalid grave state detected");
 
             return grave_ptr_old;
         }
@@ -102,7 +105,13 @@ namespace cuw3 {
         // ptr != null
         void put_thread_back(void* thread) {
             CUW3_CHECK(thread, "grave must not be empty");
+
             release(ThreadGravePtr::packed(thread, 0));
+        }
+
+        bool is_empty() {
+            auto grave_ptr_old = std::atomic_ref{*grave_ptr}.load(std::memory_order_relaxed);
+            return ThreadGravePtrHelper{grave_ptr_old}.empty();
         }
 
         ThreadGravePtr* grave_ptr{};
@@ -119,10 +128,16 @@ namespace cuw3 {
         Null,
     };
 
+    // TODO : rework statuses
     struct ThreadGraveData {
+        explicit operator bool() const {
+            return valid();
+        }
+
         bool valid() const { return status == ThreadGraveDataStatus::Valid; }
         bool failed() const { return status == ThreadGraveDataStatus::Failed; }
         bool null() const { return status == ThreadGraveDataStatus::Null; }
+        bool grave_acquired() const { return valid() && thread; }
 
         ThreadGraveDataStatus status{};
         uint32 grave_num{};
@@ -152,10 +167,9 @@ namespace cuw3 {
 
     struct alignas(conf_cacheline) DefaultThreadGraveyardEntry {
         DefaultThreadGraveyardEntry* next{};
-        DefaultThreadGraveyardEntry* tail{};
+        DefaultThreadGraveyardEntry* skip{};
     };
     
-    // TODO : outdated, change tail to skip
     struct DefaultThreadGraveyardOps {
         void set_next(void* node, void* next) {
             ((DefaultThreadGraveyardEntry*)node)->next = (DefaultThreadGraveyardEntry*)next;
@@ -169,47 +183,50 @@ namespace cuw3 {
             ((DefaultThreadGraveyardEntry*)node)->next = nullptr;
         }
 
-        void set_tail(void* node, void* tail) {
-            ((DefaultThreadGraveyardEntry*)node)->tail = (DefaultThreadGraveyardEntry*)tail;
+        void set_skip(void* node, void* skip) {
+            ((DefaultThreadGraveyardEntry*)node)->skip = (DefaultThreadGraveyardEntry*)skip;
         }
 
-        void* get_tail(void* node) {
-            return ((DefaultThreadGraveyardEntry*)node)->tail;
+        void* get_skip(void* node) {
+            return ((DefaultThreadGraveyardEntry*)node)->skip;
         }
 
-        void reset_tail(void* node) {
-            ((DefaultThreadGraveyardEntry*)node)->tail = nullptr;
+        void reset_skip(void* node) {
+            ((DefaultThreadGraveyardEntry*)node)->skip = (DefaultThreadGraveyardEntry*)node;
         }
     };
 
     // will use simplified grave inspection algorithm
     struct ThreadGraveyard {
-        static bool init(ThreadGraveyard* graveyard, uint num_grave_entries) {
-            // TODO : assertions
+        [[nodiscard]] static ThreadGraveyard* create(Memory memory, uint num_grave_entries) {
+            CUW3_CHECK_RETURN_VAL(memory.fits<ThreadGraveyard>(), nullptr, "invalid memory");
+            CUW3_CHECK_RETURN_VAL(is_pow2(num_grave_entries), nullptr, "number of graves must be pow of 2");
+            CUW3_CHECK_RETURN_VAL(num_grave_entries <= conf_graveyard_slot_count, nullptr, "too big amount of graves");
+
+            auto* graveyard = new (memory.get()) ThreadGraveyard{};
             graveyard->num_grave_entries = num_grave_entries;
-            return true;
+            return graveyard;
         }
 
-        static bool initz(ThreadGraveyard* graveyard, uint num_grave_entries) {
-            // TODO : assertions
-            *graveyard = {};
-            return init(graveyard, num_grave_entries);
-        }
 
         [[nodiscard]] ThreadGraveData _acquire(ThreadGraveAcquireParams acquire_params) {
+            bool seen = false;
             for (
                 uint curr = acquire_params.start & (num_grave_entries - 1), k = 0;
-                k < conf_graveyard_slot_count;
-                k++, curr = (curr + acquire_params.step) & (num_grave_entries - 1)
+                k < num_grave_entries;
+                curr = (curr + acquire_params.step) & (num_grave_entries - 1), k++
             ) {
                 auto grave_view = ThreadGravePtrView{&grave_entries[curr].grave};
                 auto grave_ptr = ThreadGravePtrHelper{grave_view.try_acquire()};
-                if (grave_ptr.acquired()) {
-                    return ThreadGraveDataHelper::failed();
+                if (grave_ptr.grave_acquired()) {
+                    return ThreadGraveDataHelper::valid(curr, grave_ptr.thread());
                 }
-                return ThreadGraveDataHelper::valid(curr, grave_ptr.thread());
+                if (grave_ptr.acquired()) {
+                    seen = true;
+                    continue;
+                }
             }
-            return ThreadGraveDataHelper::null();
+            return seen ? ThreadGraveDataHelper::failed() : ThreadGraveDataHelper::null();
         }
 
         template<class NodeOps>
@@ -241,23 +258,22 @@ namespace cuw3 {
             return ThreadGraveDataHelper::valid(num_grave_entries, snatched);
         }
 
+
         // API
         template<class NodeOps>
         [[nodiscard]] ThreadGraveData acquire(NodeOps&& node_ops, ThreadGraveAcquireParams acquire_params) {
             ThreadGraveyardBackoff backoff{};
-            for (uint round = acquire_params.rounds; round != 0; ) {
+            for (uint round = acquire_params.rounds; round != 0; round -= round > 0) {
                 auto grave_data = _acquire(acquire_params);
-                if (grave_data.valid()) {
+                if (grave_data.grave_acquired()) {
                     return grave_data;
-                }
-                if (grave_data.null()) {
-                    round -= round > 0;
                 }
                 backoff();
             }
             return _acquire_distribute(node_ops);
         }
 
+        // release_thread = make grave empty
         void release_thread(ThreadGraveData grave_data) {
             CUW3_CHECK(grave_data.valid() && grave_data.thread && grave_data.grave_num <= num_grave_entries, "invalid entry provided");
 
@@ -267,6 +283,7 @@ namespace cuw3 {
             }
         }
 
+        // thread was in grave and we want to put it back
         template<class NodeOps>
         void put_thread_back(ThreadGraveData grave_data, NodeOps&& node_ops) {
             CUW3_CHECK(grave_data.valid() && grave_data.thread && grave_data.grave_num <= num_grave_entries, "invalid entry provided");
@@ -276,22 +293,38 @@ namespace cuw3 {
                 grave_ptr_view.put_thread_back(grave_data.thread);
             } else {
                 auto aux_graves_list = ThreadAuxGraveList{&aux_graves};
+                node_ops.reset_next(grave_data.thread);
+                node_ops.reset_skip(grave_data.thread);
                 aux_graves_list.push(grave_data.thread, ThreadGraveyardBackoff{}, node_ops);
             }
         }
 
+        // thread is dead, was never dead before, so we want to put it into the grave
         template<class NodeOps>
         void put_thread_to_rest(void* thread, NodeOps&& node_ops) {
             CUW3_CHECK(thread, "attempt to put nullptr thread into the grave");
 
-            node_ops.reset_tail(thread);
             node_ops.reset_next(thread);
+            node_ops.reset_skip(thread);
             if (_distribute(thread, node_ops)) {
                 auto aux_grave_list = ThreadAuxGraveList{&aux_graves};
                 aux_grave_list.push(thread, ThreadGraveyardBackoff{}, node_ops);
             }
         }
 
+        // for testing purposes only
+        bool is_empty() {
+            bool aux_empty = std::atomic_ref{aux_graves}.load(std::memory_order_relaxed) == nullptr;
+            if (!aux_empty) {
+                return false;
+            }
+            for (uint i = 0; i < num_grave_entries; i++) {
+                if (!ThreadGravePtrView{&grave_entries[i].grave}.is_empty()) {
+                    return false;
+                }
+            }
+            return true;
+        }
 
         ThreadGraveEntry grave_entries[conf_graveyard_slot_count] = {}; // atomic
 

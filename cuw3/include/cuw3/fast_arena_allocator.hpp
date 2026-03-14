@@ -222,64 +222,6 @@ namespace cuw3 {
         uint64 max_arena_alignment_log2{};
     };
 
-    struct AcquiredResource {
-        enum class Status {
-            Failed,
-            Acquired,
-            NoResource,
-        };
-
-        static AcquiredResource acquired(void* resource) {
-            return {Status::Acquired, resource};
-        }
-
-        static AcquiredResource no_resource() {
-            return {Status::NoResource};
-        }
-
-        static AcquiredResource failed() {
-            return {Status::Failed};
-        }
-
-        void* get() const {
-            return resource;
-        }
-
-        bool status_failed() const {
-            return status == Status::Failed;
-        }
-
-        bool status_acquired() const {
-            return status == Status::Acquired;
-        }
-
-        bool status_no_resource() const {
-            return status == Status::NoResource;
-        }
-
-        Status status{};
-        void* resource{};
-    };
-
-    template<class T>
-    struct AcquiredTypedResource : AcquiredResource {
-        static AcquiredTypedResource acquired(void* resource) {
-            return {AcquiredResource::acquired(resource)};
-        }
-
-        static AcquiredTypedResource no_resource() {
-            return {AcquiredResource::no_resource()};
-        }
-
-        static AcquiredTypedResource failed() {
-            return {AcquiredResource::failed()};
-        }
-
-        T* get() const {
-            return (T*)AcquiredResource::get();
-        }
-    };
-
     // ALGORITHM DESCRIPTION
     // 
     // we have a range of steps that partition size range like that:
@@ -980,20 +922,19 @@ namespace cuw3 {
         FastArena* head{};
     };
 
+    struct alignas(conf_cacheline) FastArenaRetiredArenasRoot {
+        RetireReclaimEntry entry{};
+    };
+
+    struct FastArenaRetireReclaimResourceOps {
+        void set_next(void* arena, void* retired_arena_list) {
+            ((FastArena*)arena)->retire_reclaim_entry.next = retired_arena_list;
+        }
+    };
+
     // does not round up size to the min possible allocatable size
     // responsibility to locate owning arena is external to this data structure
     struct FastArenaStepSplitAllocator {
-        struct alignas(conf_cacheline) RetiredArenasRoot {
-            RetireReclaimEntry entry{};
-        };
-
-        struct FastArenaRetireReclaimResourceOps {
-            void set_next(void* arena, void* retired_arena_list) {
-                ((FastArena*)arena)->retire_reclaim_entry.next = retired_arena_list;
-            }
-        };
-
-
         [[nodiscard]] static FastArenaStepSplitAllocator* create(Memory memory, const FastArenaStepSplitAllocatorConfig& config) {
             CUW3_CHECK_RETURN_VAL(memory.fits<FastArenaStepSplitAllocator>(), nullptr, "fast arena allocator: memory was null");
 
@@ -1157,7 +1098,36 @@ namespace cuw3 {
         }
 
 
-        RetiredArenasRoot retired_arenas{};
+        FastArenaRetiredArenasRoot retired_arenas{};
         FastArenaBins fast_arena_bins{};
     };
+
+    // TODO
+    // struct FastArenaSmallBins {
+    //     struct FastArenaSmallBin {
+    //         void acquire() {
+
+    //         }
+
+    //         void release() {
+
+    //         }
+
+    //         FastArenaListEntry free_list{};
+    //         FastArenaListEntry recycled_list{};
+    //         uint64 alignment{};
+    //     };
+
+    //     static constexpr uint64 align_axis = conf_max_fast_arenas;
+
+    //     FastArenaSmallBin bins[align_axis] = {};
+    //     uint64 min_alignment_log2{};
+    //     uint64 max_alignment_log2{};
+    // };
+
+    // struct FastArenaSmallAllocator {
+
+    //     FastArenaRetiredArenasRoot retired_arenas{};
+    //     FastArenaSmallBins small_arena_bins{};
+    // };
 }

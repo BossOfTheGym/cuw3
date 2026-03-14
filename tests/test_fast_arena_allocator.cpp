@@ -4,6 +4,8 @@
 #include "cuw3/funcs.hpp"
 #include "cuw3/fast_arena_allocator.hpp"
 
+#include "tests_common.hpp"
+
 #include <queue>
 #include <mutex>
 #include <atomic>
@@ -30,17 +32,6 @@ namespace fast_arena_tests {
     };
 
     struct FastArenaUnit {
-        struct VMemDeleter {
-            void operator()(void* memory) const {
-                vmem_free(memory, size);
-            }
-
-            uint64 size{};
-        };
-
-        using VMemPtr = std::unique_ptr<void, VMemDeleter>;
-
-
         static uint64 adjust_alignment(uint alignment) {
             return std::max<uint>(alignment, conf_min_alloc_alignment);
         }
@@ -376,40 +367,6 @@ namespace fast_arena_tests {
 
 
 namespace fast_arena_allocator_tests {
-    // TODO : owner
-    // TODO : storage for memory & handles
-    // TODO : allocator: fast arena allocator + storage
-    struct VMemDeleter {
-        void operator()(void* ptr) const {
-            vmem_free(ptr, size);
-        }
-
-        uint64 size{};
-    };
-
-    using VMemPtrBase = std::unique_ptr<void, VMemDeleter>;
-
-    struct VMemPtr : VMemPtrBase {
-        using VMemPtrBase::VMemPtrBase;
-
-        static VMemPtr create(uint64 size) {
-            size = align(size, vmem_page_size());
-            void* ptr = vmem_alloc(size, VMemAllocType::VMemReserveCommit);
-            if (!ptr) {
-                return {};
-            }
-            return {ptr, VMemDeleter{size}};
-        }
-
-        void* ptr() const {
-            return get();
-        }
-
-        uint64 size() const {
-            return get_deleter().size;
-        }
-    };
-
     struct TestRawFastArenaData {
         explicit operator bool() const {
             return arena;

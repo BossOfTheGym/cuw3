@@ -14,6 +14,13 @@
 #include <functional>
 #include <condition_variable>
 
+
+#include "cuw3/vmem.hpp"
+#include "cuw3/funcs.hpp"
+
+using namespace cuw3;
+
+
 template<class Ret>
 std::future<Ret> dispatch_job(std::function<Ret()>&& job) {
     std::promise<Ret> promise{};
@@ -75,3 +82,34 @@ void shuffle(std::vector<T>& vec) {
         std::swap(vec[rand() % i], vec.back());
     }
 }
+
+struct VMemDeleter {
+    void operator()(void* ptr) const {
+        vmem_free(ptr, size);
+    }
+
+    uint64 size{};
+};
+
+using VMemPtrBase = std::unique_ptr<void, VMemDeleter>;
+
+struct VMemPtr : VMemPtrBase {
+    using VMemPtrBase::VMemPtrBase;
+
+    static VMemPtr create(uint64 size) {
+        size = align(size, vmem_page_size());
+        void* ptr = vmem_alloc(size, VMemAllocType::VMemReserveCommit);
+        if (!ptr) {
+            return {};
+        }
+        return {ptr, VMemDeleter{size}};
+    }
+
+    void* ptr() const {
+        return get();
+    }
+
+    uint64 size() const {
+        return get_deleter().size;
+    }
+};
