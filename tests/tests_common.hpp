@@ -63,3 +63,15 @@ inline auto get_job_part(uint start, uint stop, uint parts, uint part_id) -> Job
     uint job_stop = std::clamp(job_start + part, start, stop);
     return {job_start, job_stop};
 }
+
+template<class T>
+void shuffle(std::vector<T>& vec) {
+    if (vec.size() == 0) {
+        return;
+    }
+
+    std::minstd_rand rand{std::random_device{}()};
+    for (uint i = 1; i < vec.size(); i++) {
+        std::swap(vec[rand() % i], vec.back());
+    }
+}

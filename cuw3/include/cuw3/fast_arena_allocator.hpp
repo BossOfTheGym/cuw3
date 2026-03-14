@@ -15,6 +15,7 @@ namespace cuw3 {
 
     using FastArenaBackoff = SimpleBackoff;
 
+    // TODO : rework data layout
     // resource hierarchy
     // allocation -> arena -> (???)
     struct alignas(conf_cacheline) FastArena {
@@ -22,20 +23,21 @@ namespace cuw3 {
             return cuw3_field_to_obj(list_entry, FastArena, list_entry);
         }
 
-        // cacheline 0
+        // cacheline (least volatile data)
         RegionChunkHandleHeader region_chunk_header{};
+        RetireReclaimEntry retire_reclaim_entry{};
+        uint64 pad0[3] = {};
+        
+        // cacheline (most volatile and owner modified data)
         FastArenaListEntry list_entry{};
-
+        
         uint64 freed{};
         uint64 top{};
         uint64 arena_memory_size{};
         uint64 arena_alignment{};
-
+        
         alignas(8) void* arena_memory{};
-
-        // cacheline 1
-        RetireReclaimEntry retire_reclaim_entry{};
-        uint64 pad1[4] = {};
+        uint64 pad1[1] = {};
     };
 
     static_assert(sizeof(FastArena) <= conf_control_block_size, "pack struct field better or increase size of the control block");
@@ -43,6 +45,7 @@ namespace cuw3 {
 
     struct FastArenaConfig {
         void* owner{};
+        uint64 arena_type{};
 
         void* arena_memory{};
         uint64 arena_memory_size{};
@@ -66,7 +69,7 @@ namespace cuw3 {
             CUW3_CHECK_RETURN_VAL(is_aligned(config.arena_memory, config.arena_alignment), nullptr, "arena memory is not properly aligned");
 
             auto* arena = new (memory.get()) FastArena{};
-            RegionChunkHandleHeaderView{&arena->region_chunk_header}.start_chunk_lifetime(config.owner, (uint64)RegionChunkType::FastArena);
+            arena->region_chunk_header = RegionChunkHandleHeader::from(config.owner, config.arena_type);
 
             arena->arena_alignment = config.arena_alignment;
             arena->top = 0;
@@ -74,7 +77,10 @@ namespace cuw3 {
             arena->arena_memory = config.arena_memory;
 
             auto* retire_reclaim_entry = RetireReclaimEntryView::create(
-                Memory::from(&arena->retire_reclaim_entry), config.retire_reclaim_flags, (uint32)RegionChunkType::FastArena, offsetof(FastArena, retire_reclaim_entry)
+                Memory::from(&arena->retire_reclaim_entry),
+                config.retire_reclaim_flags,
+                config.arena_type,
+                offsetof(FastArena, retire_reclaim_entry)
             );
             CUW3_CHECK_RETURN_VAL(retire_reclaim_entry, nullptr, "fast_arena: failed to create retire_reclaim_entry");
 

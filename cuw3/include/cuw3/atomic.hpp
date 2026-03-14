@@ -177,7 +177,7 @@ namespace cuw3 {
 
         struct Node {
             Link next{};
-            Link tail{};
+            Link skip{};
         };
 
         struct ListTraits {
@@ -187,10 +187,6 @@ namespace cuw3 {
         };
 
         struct NodeOps {
-            Link get_tail(Link node) const {
-                return node->tail;
-            }
-
             void set_skip(Link node, Link skip) const {
                 node->skip = skip;
             }

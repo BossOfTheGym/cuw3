@@ -51,92 +51,27 @@ namespace cuw3 {
     
     using RegionChunkHandleHeaderData = AlignmentPackedPtr<uint64, region_chunk_handle_header_data_bits>;
     
-    inline constexpr uint64 region_chunk_handle_min_size = 16; // just to be greater than 8
-
     using RegionChunkPoolLinkType = uint32;
 
     // this struct must be at the beginning of each handle
     struct RegionChunkHandleHeader {
-        RegionChunkHandleHeaderData data{}; // atomic memory location/readonly memory location
+        static RegionChunkHandleHeader from(void* owner, uint64 data) {
+            return {RegionChunkHandleHeaderData::packed(owner, data)};
+        }
+
+        void* owner() const {
+            return _data.ptr();
+        }
+
+        RegionChunkHandleHeaderDataRaw data() const {
+            return _data.data();
+        }
+
+        RegionChunkHandleHeaderData _data{}; // atomic memory location/readonly memory location
     };
-
-    // TODO: remove this garbage (do not remove this garbage, think a little)
-    // memory order can be relaxed here: no memory operation should depend on modification of distinct chunk handle
-    // (we do stricter memory accesses on shared data structures (list) anyway)
-    struct RegionChunkHandleHeaderView {
-        // chunk has already been allocated here
-        // starts new chunk lifetime immediately after it was allocated
-        // first you fetch chunk from the list, then you start its lifetime
-        // basically it means that you start using this chunk and initialize the data structure that will be placed at its location
-        // thread exclusively acquires the chunk, no other thread can modify chunk header state after handle has been acquired
-        void start_chunk_lifetime(void* owner, uint64 chunk_type) {
-            auto new_data = RegionChunkHandleHeaderData::packed(owner, chunk_type);
-            std::atomic_ref{header->data}.store(new_data, std::memory_order_relaxed);
-        }
-
-        // chunk has already been allocated here
-        // thread own chunk handle exclusively, other thread can only read this memory location (even atomically) - no race here
-        void* get_owner() {
-            return header->data.ptr();
-        }
-
-        // chunk has already been allocated here
-        // thread own chunk handle exclusively, other thread can only read this memory location (even atomically) - no race here
-        uint64 get_type() {
-            return header->data.data();
-        }
-
-
-        // chunk has already been allocated here
-        // we want to return chunk back into the shared data structure (list)
-        // now modification can produce a data race, so we have to make an atomic modification
-        void set_next_chunk(RegionChunkPoolLinkType next) {
-            auto new_data = RegionChunkHandleHeaderData::packed_shifted(next, 0);
-            std::atomic_ref{header->data}.store(new_data, std::memory_order_relaxed);
-        }
-
-        // chunk may have become allocated here (either still in the list or already allocated)
-        // we assume that chunk is still in the shared list
-        // we do want to allocate it so we also assume concurrent access
-        // that's why we do n atomic access here
-        RegionChunkPoolLinkType get_next_chunk() {
-            return std::atomic_ref{header->data}.load(std::memory_order_relaxed).value_shifted();
-        }
-
-
-        RegionChunkHandleHeader* header{};
-    };
-
-    // TODO: remove this garbage
-    // region chunk header always goes first
-    // this function zero initializes wohle handle without touching handle itself as (even though not crictical) introduces a race
-    // race can be considered 'safe' as there will be only threads possibly reading the value
-    template<class T>
-    T* initz_region_chunk_handle(Memory memory) {
-        CUW3_CHECK_RETURN_VAL(memory.fits<T>(conf_region_handle_size, region_chunk_handle_header_ptr_alignment), "inappropriate memory for chunk handle");
-
-        // WARNING! THIS IS HACKY PARTIAL C-STYLE INITIALIZATION!
-        // we have to do this because some other threads....
-        // TODO : this must be rechecked
-        // TODO : leave a dementia comment here explaining why this is crucial
-        std::memset(
-            advance_ptr(memory.get(), sizeof(RegionChunkHandleHeader)), 0x00, memory.size() - sizeof(RegionChunkHandleHeader)
-        );
-        return (T*)memory.get();
-    }
 
     enum class RegionChunkType : uint32 {
-        PoolShardPool = 1,
-        FastArena,
+        FastArenaStepSplitAllocator,
+        FastArenaBinAllocator,
     };
-
-    // dummy type to store both handle + memory when chunk is retired 
-    struct RegionChunkHandle {
-        RegionChunkHandleHeader header{};
-        RegionChunkHandle* next{};
-        void* chunk_memory{};
-        uint64 chunk_size{};
-    };
-
-    static_assert(sizeof(RegionChunkHandle) <= conf_region_handle_size, "too big region chunk handle");
 }
