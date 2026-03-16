@@ -83,6 +83,7 @@ namespace cuw3 {
     static_assert(conf_fast_arena_min_alignment_pow2 <= conf_fast_arena_max_alignment_pow2, "fast arena min alignment pow2 is greater than fast arena max alignment pow2");
     static_assert(conf_fast_arena_max_alignment_pow2 <= conf_min_region_chunk_size_pow2, "fast arena max alignment is greater than minimal region chunk size");
     
+    //  TODO : recheck all dependent code
     inline constexpr gsize conf_max_fast_arenas = 8; // TODO : def
     inline constexpr gsize conf_num_fast_arenas = conf_fast_arena_max_alignment_pow2 - conf_fast_arena_min_alignment_pow2 + 1;
 

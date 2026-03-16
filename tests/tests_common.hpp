@@ -83,6 +83,16 @@ void shuffle(std::vector<T>& vec) {
     }
 }
 
+template<class T>
+T random_sample_n_pop(std::vector<T>& vec, uint64 seed) {
+    CUW3_CHECK(!vec.empty(), "attempt to sample from an empty vector");
+
+    std::swap(vec[seed % vec.size()], vec.back());
+    auto elem = std::move(vec.back());
+    vec.pop_back();
+    return elem;
+}
+
 struct VMemDeleter {
     void operator()(void* ptr) const {
         vmem_free(ptr, size);

@@ -1,9 +1,5 @@
-* implement special fast arena bin for small allocations (less than min_alloc_size)
-* test it
-
-
 * implement thread_local_allocator
 * implement malloc/free
-
+* inspect conf.hpp
 
 * gtest (fuck gtest)

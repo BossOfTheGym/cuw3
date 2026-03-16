@@ -72,6 +72,6 @@ namespace cuw3 {
 
     enum class RegionChunkType : uint32 {
         FastArenaStepSplitAllocator,
-        FastArenaSimpleAllocator,
+        FastArenaSmallAllocator,
     };
 }
