@@ -20,7 +20,7 @@
 using namespace cuw3;
 
 namespace fast_arena_tests {
-    struct alignas(region_chunk_handle_header_ptr_alignment) Owner {
+    struct alignas(region_owner_alignment) Owner {
     } dummy_owner;
 
     struct FastArenaAllocation {
@@ -515,7 +515,7 @@ namespace fast_arena_allocator_tests {
         void* ptr{};
     };
 
-    struct alignas(region_chunk_handle_header_ptr_alignment) TestFastArenaStepSplitAllocator {
+    struct alignas(region_owner_alignment) TestFastArenaStepSplitAllocator {
         TestFastArenaStepSplitAllocator(uint num_arenas, uint arena_size)
             : arena_storage(num_arenas, arena_size) {
             FastArenaStepSplitAllocatorConfig allocator_config{};
@@ -693,7 +693,7 @@ namespace fast_arena_allocator_tests {
         }
     };
 
-    struct alignas(region_chunk_handle_header_ptr_alignment) TestFastArenaSmallAllocator {
+    struct alignas(region_owner_alignment) TestFastArenaSmallAllocator {
         TestFastArenaSmallAllocator(uint num_arenas, uint arena_size)
             : arena_storage(num_arenas, arena_size) {
             FastArenaSmallAllocatorConfig config{};

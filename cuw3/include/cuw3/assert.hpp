@@ -25,25 +25,7 @@ do {\
     }\
 } while(0)
 
-// TODO : print out the message
-// TODO : conter-intuitive 
-#define CUW3_ALERT_RETURN_VAL(cond, value, ...) \
-    do { \
-        if ((cond)) { \
-            std::cerr << #cond << std::endl; \
-            return value; \
-        } \
-    } while(0)
-
-// TODO : conter-intuitive 
-#define CUW3_ALERT_RETURN_VOID(cond, ...) \
-    do { \
-        if ((cond)) { \
-            std::cerr << #cond << std::endl; \
-            return; \
-        } \
-    } while(0)
-
+// TODO : print message
 #define CUW3_CHECK_RETURN_VAL(cond, value, ...) \
     do { \
         if (!(cond)) { \
@@ -57,6 +39,14 @@ do {\
         if (!(cond)) { \
             std::cerr << #cond << std::endl; \
             return; \
+        } \
+    } while(0)
+
+#define CUW3_CHECK_GOTO(cond, label, ...) \
+    do { \
+        if (!(cond)) { \
+            std::cerr << #cond << std::endl; \
+            goto label; \
         } \
     } while(0)
 

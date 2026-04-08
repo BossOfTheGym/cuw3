@@ -159,6 +159,8 @@ namespace cuw3 {
             specs->num_handles = handle_offset;
 
             specs->total_pool_handles_size = sizeof(RegionChunkPoolLinkType) * specs->num_handles;
+            specs->pool_handles_alignment = alignof(RegionChunkPoolLinkType);
+
             return specs;
         }
 
@@ -243,11 +245,13 @@ namespace cuw3 {
         
         // pool metadata is stored separately from the handle
         uint64 total_handles_size{}; // readonly, in bytes
-        uint64 total_pool_handles_size{}; // readonly, in bytes
         uint64 handle_alignment{}; // readonly
         uint64 handle_size{}; // readonly, in bytes
         uint64 handle_size_log2{}; // readonly
         uint64 num_handles{}; // readonly
+
+        uint64 total_pool_handles_size{}; // readonly, in bytes
+        uint64 pool_handles_alignment{}; // readonly, in bytes
     };
 
 
@@ -282,7 +286,7 @@ namespace cuw3 {
     };
 
     struct RegionChunkAllocatorPoolsConfig {
-        const RegionChunkAllocatorSpecs* allocator_specs{};
+        const RegionChunkAllocatorSpecs* specs{};
         uint64 contention_split{};
     };
 
@@ -292,11 +296,11 @@ namespace cuw3 {
             CUW3_CHECK_RETURN_VAL(config.contention_split <= conf_max_contention_split, nullptr, "invalid value of contention split");
             CUW3_CHECK_RETURN_VAL(is_pow2(config.contention_split), nullptr, "contention split must be power of two");
 
-            const RegionChunkAllocatorSpecs* specs = config.allocator_specs;
+            const RegionChunkAllocatorSpecs* specs = config.specs;
             uint64 contention_split = config.contention_split ? config.contention_split : 1;
 
             auto* pools = new (memory.get()) RegionChunkAllocatorPools{};
-            pools->num_regions = config.allocator_specs->num_regions;
+            pools->num_regions = config.specs->num_regions;
             pools->num_splits = contention_split;
 
             // this will initialize all not used entries as well
@@ -447,7 +451,7 @@ namespace cuw3 {
     // NOTE : we can commit them not all at once but sequentially when needed
     //
     // this is commonly a global shared entity
-    struct RegionAllocator {
+    struct RegionChunkAllocator {
         struct RegionAllocatorPoolHandleOps {
             RegionChunkPoolLinkType* get_handle(RegionChunkPoolLinkType node) {
                 return (RegionChunkPoolLinkType*)alloc->pool_handles + node;
@@ -467,14 +471,14 @@ namespace cuw3 {
                 return std::atomic_ref{*get_handle(node)}.load(std::memory_order_relaxed);
             }
 
-            RegionAllocator* alloc{};
+            RegionChunkAllocator* alloc{};
         };
 
 
-        [[nodiscard]] static RegionAllocator* create(Memory memory, const RegionAllocatorConfig& config) {
-            CUW3_CHECK_RETURN_VAL(memory.fits<RegionAllocator>(), nullptr, "invalid memory");
+        [[nodiscard]] static RegionChunkAllocator* create(Memory memory, const RegionAllocatorConfig& config) {
+            CUW3_CHECK_RETURN_VAL(memory.fits<RegionChunkAllocator>(), nullptr, "invalid memory");
 
-            auto* alloc = new (memory.get()) RegionAllocator{};
+            auto* alloc = new (memory.get()) RegionChunkAllocator{};
             alloc->specs = config.specs;
             alloc->pools = config.pools;
             alloc->regions = config.regions;

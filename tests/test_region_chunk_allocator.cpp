@@ -136,7 +136,7 @@ void test_region_allocator_pools() {
     constexpr uint64 contention_split = 8;
 
     RegionChunkAllocatorPoolsConfig pools_config{};
-    pools_config.allocator_specs = &specs;
+    pools_config.specs = &specs;
     pools_config.contention_split = contention_split;
 
     RegionChunkAllocatorPools pools{};
@@ -177,7 +177,7 @@ struct TestRegionChunkAllocator {
         constexpr uint64 contention_split = 8;
 
         RegionChunkAllocatorPoolsConfig pools_config{};
-        pools_config.allocator_specs = &specs;
+        pools_config.specs = &specs;
         pools_config.contention_split = contention_split;
 
         auto* pools_check = RegionChunkAllocatorPools::create(Memory::from(&pools), pools_config);
@@ -199,7 +199,7 @@ struct TestRegionChunkAllocator {
         allocator_config.handles = handles.ptr();
         allocator_config.pool_handles = pool_handles.ptr();
 
-        auto* allocator_check = RegionAllocator::create(Memory::from(&allocator), allocator_config);
+        auto* allocator_check = RegionChunkAllocator::create(Memory::from(&allocator), allocator_config);
         CUW3_CHECK(allocator_check, "failed to create an allocator");
     }
 
@@ -228,7 +228,7 @@ struct TestRegionChunkAllocator {
     VMemPtr regions{};
     VMemPtr handles{};
     VMemPtr pool_handles{};
-    RegionAllocator allocator{};
+    RegionChunkAllocator allocator{};
 };
 
 template<class T>

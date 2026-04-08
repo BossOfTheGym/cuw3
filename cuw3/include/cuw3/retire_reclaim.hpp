@@ -217,6 +217,12 @@ namespace cuw3 {
             }
         }
 
+        bool any_retired() {
+            auto resource_ref = std::atomic_ref{*resource};
+            auto resource_old = resource_ref.load(std::memory_order_relaxed);
+            return resource_old.value() && RetireReclaimFlagsHelper{resource_old}.retired();
+        }
+
         RetireReclaimPtr* resource{};
     };
 

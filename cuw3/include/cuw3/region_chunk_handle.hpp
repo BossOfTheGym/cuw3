@@ -48,11 +48,13 @@ namespace cuw3 {
     
     inline constexpr uint64 region_chunk_handle_header_data_bits = 6;
     inline constexpr uint64 region_chunk_handle_header_ptr_alignment = 1 << region_chunk_handle_header_data_bits;
-    
+    inline constexpr uint64 region_owner_alignment = region_chunk_handle_header_ptr_alignment;
+
     using RegionChunkHandleHeaderData = AlignmentPackedPtr<uint64, region_chunk_handle_header_data_bits>;
     
     using RegionChunkPoolLinkType = uint32;
 
+    // TODO : make things atomic
     // this struct must be at the beginning of each handle
     struct RegionChunkHandleHeader {
         static RegionChunkHandleHeader from(void* owner, uint64 data) {

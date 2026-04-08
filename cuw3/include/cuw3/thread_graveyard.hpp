@@ -170,6 +170,7 @@ namespace cuw3 {
         DefaultThreadGraveyardEntry* skip{};
     };
     
+    // default list ops for graveyards
     struct DefaultThreadGraveyardOps {
         void set_next(void* node, void* next) {
             ((DefaultThreadGraveyardEntry*)node)->next = (DefaultThreadGraveyardEntry*)next;

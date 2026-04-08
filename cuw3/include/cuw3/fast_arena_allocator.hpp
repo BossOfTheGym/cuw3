@@ -16,6 +16,7 @@ namespace cuw3 {
     using FastArenaBackoff = SimpleBackoff;
 
     // TODO : something must be done with view and const-view issue. Basically, when we want to provide some const-correctness.
+    // * kind of solved: whatever the const view can do  general view can do too, so general view inherits from the 
     // TODO : do something with the cache alignment issue (make it more convenient)
     // resource hierarchy
     // allocation -> arena -> (???)
@@ -25,10 +26,12 @@ namespace cuw3 {
         }
 
         // cacheline (least volatile data)
-        RegionChunkHandleHeader region_chunk_header{};
+        RegionChunkHandleHeader region_chunk_header{}; // TODO: make things atomic
         RetireReclaimEntry retire_reclaim_entry{};
         uint64 pad0[3] = {};
         
+        // TODO : global list entry
+
         // cacheline (most volatile and owner modified data)
         FastArenaListEntry list_entry{};
         
@@ -38,7 +41,7 @@ namespace cuw3 {
         uint64 arena_alignment{};
         
         alignas(8) void* arena_memory{};
-        uint64 pad1[1] = {};
+        uint64 pad1[1] = {}; // TODO : location hints
     };
 
     static_assert(sizeof(FastArena) <= conf_control_block_size, "pack struct field better or increase size of the control block");
@@ -614,7 +617,7 @@ namespace cuw3 {
                 }
 
                 auto arena_view = FastArenaView{arena};
-                CUW3_CHECK(arena_view.remaining() >= min_alloc_size, "invariant violation: cached arena has less space that min_alloc_size");
+                CUW3_CHECK(arena_view.remaining() >= min_alloc_size, "invariant violation: bin arena has less space that min_alloc_size");
 
                 return AcquiredTypedResource<FastArena>::acquired(arena);
             }
@@ -922,6 +925,10 @@ namespace cuw3 {
 
         bool empty() const {
             return !head;
+        }
+
+        explicit operator bool() const {
+            return !empty();
         }
 
         FastArena* head{};
@@ -1300,8 +1307,8 @@ namespace cuw3 {
         }
 
         // size_cutoff is max-aligned so no alignment required here
-        bool can_allocate(uint64 size) const {
-            return size <= size_cutoff;
+        bool can_allocate(uint64 size, uint64 alignment_id) const {
+            return valid_alignment_id(alignment_id) && size <= size_cutoff;
         }
 
         bool valid_alignment_id(uint64 alignment_id) const {
@@ -1356,13 +1363,12 @@ namespace cuw3 {
             return bins.num_alignments;
         }
 
-        // arena will beextracted from the data structure
+        // arena will be extracted from the data structure
         [[nodiscard]] AcquiredTypedResource<FastArena> acquire(uint64 size, uint64 alignment) {
-            if (!bins.can_allocate(size)) {
+            auto alignment_id = bins.locate_alignment(alignment);
+            if (!bins.can_allocate(size, alignment_id)) {
                 return AcquiredTypedResource<FastArena>::failed();
             }
-
-            auto alignment_id = bins.locate_alignment(alignment);
             if (!bins.valid_alignment_id(alignment_id)) {
                 return AcquiredTypedResource<FastArena>::failed();
             }
@@ -1389,13 +1395,13 @@ namespace cuw3 {
         [[nodiscard]] void* allocate(FastArena* arena, uint64 size) {
             CUW3_CHECK(arena, "arena was null");
 
-            if (!bins.can_allocate(size)) {
-                return nullptr;
-            }
-            
             auto arena_view = FastArenaView{arena};
             auto alignment = arena_view.alignment();
             auto alignment_id = bins.locate_alignment(alignment);
+            if (!bins.can_allocate(size, alignment_id)) { // TODO: double check, can be made more efficient (wrapped into a macro)
+                return nullptr;
+            }
+            
             if (!bins.valid_alignment_id(alignment_id)) {
                 return nullptr;
             }

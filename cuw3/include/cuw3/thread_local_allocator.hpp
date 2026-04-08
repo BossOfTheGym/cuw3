@@ -1,113 +1,59 @@
 #pragma once
 
 #include "conf.hpp"
-#include "cuw3/thread_graveyard.hpp"
 #include "list.hpp"
 #include "backoff.hpp"
 #include "cuw3/atomic.hpp"
 #include "retire_reclaim.hpp"
 #include "region_chunk_handle.hpp"
 #include "fast_arena_allocator.hpp"
+#include "cuw3/thread_graveyard.hpp"
 
 namespace cuw3 {
     struct ThreadLocalAllocatorConfig {
-        void* allocator_memory{};
-        uint64 allocator_memory_size{};
-
-        uint64 num_regions{};
-
-        uint64 min_fast_arena_size{};
-        uint64 max_fast_arena_size{};
-        uint64 min_fast_arena_alignment{};
-        uint64 max_fast_arena_alignment{};
-        
-        uint64 shard_pool_size{};
-        uint64 min_chunk_pow2{};
-        uint64 max_chunk_pow2{};
+        FastArenaStepSplitAllocatorConfig step_split_alloc_config{};
+        FastArenaSmallAllocatorConfig small_alloc_config{};
     };
+
+    using ThreadGraveyardEntry = DefaultThreadGraveyardEntry;
+    using ThreadGraveyardOps = DefaultThreadGraveyardOps;
 
     // thread local allocator: core structure that holds context of all allocator types 
     // this type is not relocatable: its address must remain constant during lifetime
-    // many parts of an allocator system rely on that including some internal fields of the thread allocator itself (retire-reclaim system)
-    // NOTE: inconsistency: has fixed amount of arenas and pools when  
-    struct ThreadLocalAllocator {
-        using ThreadGraveyardEntry = DefaultThreadGraveyardEntry;
-        using ThreadGraveyardOps = DefaultThreadGraveyardOps;
-
-        struct alignas(conf_cacheline) ThreadRetiredResource {
-            RetireReclaimEntry entry{};
-        };
-
-        using ThreadFastArenaBinListEntry = DefaultListEntry;
-        using ThreadFastArenaBinListOps = DefaultListOps<ThreadFastArenaBinListEntry>;
-
-        struct ThreadFastArenaBin {
-            ThreadFastArenaBinListEntry list_head{};
-        };
-        
-        using ThreadPoolBinListEntry = DefaultListEntry;
-        using ThreadPoolBinListOps = DefaultListOps<ThreadPoolBinListEntry>;
-
-        struct ThreadPoolBin {
-            ThreadPoolBinListEntry free_list_head{}; // has free resource
-            ThreadPoolBinListEntry full_list_head{}; // has on free resource
-        };
-
-        using ThreadPoolShardPoolBin = ThreadPoolBin;
-        using ThreadChunkPoolBin = ThreadPoolBin;
-
-        struct RecycledRegionChunkBin {
-            RegionChunkHandle* head{};
-        };
-
-
+    struct alignas(region_owner_alignment) ThreadLocalAllocator {
         static ThreadLocalAllocator* graveyard_entry_to_allocator(ThreadGraveyardEntry* entry) {
             return cuw3_field_to_obj(entry, ThreadLocalAllocator, graveyard_entry);
         }
 
+        [[nodiscard]] static ThreadLocalAllocator* create(Memory memory, const ThreadLocalAllocatorConfig& config) {
+            CUW3_CHECK_RETURN_VAL(memory.fits<ThreadLocalAllocator>(), nullptr, "invalid memory");
 
-        // impl
-        // TODO
+            auto* tla = new (memory.get()) ThreadLocalAllocator{};
+            list_init(tla->graveyard_ptr(), ThreadGraveyardOps{});
+            
+            auto* step_split_allocator = FastArenaStepSplitAllocator::create(Memory::from(&tla->step_split_allocator), config.step_split_alloc_config);
+            CUW3_CHECK_RETURN_VAL(step_split_allocator, nullptr, "failed to create step_split_allocator");
 
-        // API
-        // void add_shard_pool(const PoolShardPoolConfig& config, uint64 region_index) {
+            auto* small_allocator = FastArenaSmallAllocator::create(Memory::from(&tla->small_allocator), config.small_alloc_config);
+            CUW3_CHECK_RETURN_VAL(small_allocator, nullptr, "failed to create small_allocator");
 
-        // }
+            return tla;
+        }
 
-        // void* pool_allocate(uint64 size, uint64 alignment) {
+        // just to be sure that it is consistent with ThreadGraveyardOps
+        ThreadGraveyardEntry* graveyard_ptr() {
+            return &graveyard_entry;
+        }
 
-        // }
-
-        // void* pool_deallocate(PoolShardPool* shard_pool, uint64 region_index, ChunkPool* pool, void* ptr) {
-
-        // }
-
-        // void retire_pool_deallocation() {
-
-        // }
-
-        // void reclaim_pool_deallocations() {
-
-        // }
-
-        
         ThreadGraveyardEntry graveyard_entry{};
+        FastArenaStepSplitAllocator step_split_allocator{};
+        FastArenaSmallAllocator small_allocator{};
 
-        // NOTE : some of this is not exactly 'common' but can be attached to either of allocators
-        // common stuff
-        uint64 allocator_memory_size{};
-
-        uint64 num_regions{};
-        uint64 num_fast_arena_bins{};
-
-        uint64 min_fast_arena_size{};
-        uint64 max_fast_arena_size{};
-        uint64 min_fast_arena_alignment{};
-        uint64 max_fast_arena_alignment{};
-
-        uint64 shard_pool_size{};
-        uint64 min_chunk_pow2{};
-        uint64 max_chunk_pow2{};
-        uint64 num_chunk_pool_bins{};
+        // kind of a workaround that will rest here for now
+        // not that much of a workaround... well, not that much...
+        // just a little workaround, Stan
+        uint64 total_chunk_storage_size{};
+        uint64 last_chunk_pool_split_id[conf_max_region_sizes] = {};
+        uint64 last_graveyard_id{};
     };
 }
