@@ -18,6 +18,8 @@ namespace cuw3 {
     using ThreadGraveyardEntry = DefaultThreadGraveyardEntry;
     using ThreadGraveyardOps = DefaultThreadGraveyardOps;
 
+    // TODO : this little body gets little bit fused with allocator.hpp itself
+    // * probably it is a good idea just to move it into the allocator.hpp next to the main allocator data structure 
     // thread local allocator: core structure that holds context of all allocator types 
     // this type is not relocatable: its address must remain constant during lifetime
     struct alignas(region_owner_alignment) ThreadLocalAllocator {
@@ -49,6 +51,7 @@ namespace cuw3 {
         FastArenaStepSplitAllocator step_split_allocator{};
         FastArenaSmallAllocator small_allocator{};
 
+        // TODO : do something with it later
         // kind of a workaround that will rest here for now
         // not that much of a workaround... well, not that much...
         // just a little workaround, Stan

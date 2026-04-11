@@ -1,5 +1,5 @@
-#pragma once
 
+#pragma once
 #include "cuw3/utils.hpp"
 #include "vmem.hpp"
 #include "thread_graveyard.hpp"
@@ -19,7 +19,6 @@ namespace cuw3 {
     struct AllocatorMemoryBundle {
         [[nodiscard]] static AllocatorMemoryBundle from(const RegionChunkAllocatorSpecs& specs) {
             AllocatorMemoryBundle bundle{};
-
             bundle.regions = vmem_alloc_aligned(specs.total_regions_size, VMemAllocType::VMemReserve, specs.region_alignment);
             if (!bundle.regions) {
                 goto failed_regions_alloc;
@@ -117,14 +116,81 @@ namespace cuw3 {
         // we live yet another day!
         // dis is stonks
 
-        RegionChunkAllocation _allocate_chunk(ThreadLocalAllocator* tla, uint64 size, uint64 alignment) {
-            tla->total_chunk_storage_size;
+        [[nodiscard]] RegionChunkAllocation _allocate_chunk(ThreadLocalAllocator* tla, uint64 size, uint64 alignment) {
+            uint64 demand = std::max(
+                align(size, alignment), 
+                std::min(rca.get_max_chunk_size(), tla->total_chunk_storage_size)
+            );
+            uint32 region = rca.search_suitable_region(demand);
+            if (region == region_chunk_allocator_null_value) {
+                return {};
+            }
+
+            // TODO : we work with internal tla data here, do something with it later
+            RegionChunkAllocParams alloc_params{};
+            alloc_params.rounds = 4;
+            alloc_params.attempts = -1;
+            alloc_params.split_step = 1;
+            for (uint32 curr_region = region; curr_region < rca.get_num_regions(); curr_region++) {
+                alloc_params.split_start = tla->last_chunk_pool_split_id[curr_region];
+                if (auto chunk_allocation = rca.allocate_chunk(curr_region,  alloc_params)) {
+                    tla->last_chunk_pool_split_id[curr_region] = chunk_allocation.split; // update split
+                    tla->total_chunk_storage_size += rca.get_region_spec(curr_region).get_chunk_size(); // pump up the usage
+                    return chunk_allocation;
+                }
+            }
+            return {};
         }
 
-        AcquiredResource _allocate_small_allocator(ThreadLocalAllocator* tla, uint64 size, uint64 alignment) {
+        [[nodiscard]] FastArena* _construct_arena(ThreadLocalAllocator* tla, RegionChunkAllocation chunk_allocation, uint64 alignment, uint64 type) {
+            // TODO : no_check can be used
+            RegionChunkMemory chunk_memory = rca.region_data_to_memory(chunk_allocation.region, chunk_allocation.chunk, chunk_allocation.handle);
+            if (!chunk_memory) {
+                return nullptr;
+            }
+
+            // TODO : stupid as hell, but I'm gonna put somewhere else later
+            uint64 chunk_size = rca.get_region_spec(chunk_allocation.region).get_chunk_size();
+            // TODO : check return value
+            // TODO : check resource destruction order
+            vmem_commit(chunk_memory.chunk, chunk_size);
+
+            FastArenaConfig config{};
+            config.owner = tla;
+            config.arena_type = type;
+            config.arena_alignment = alignment;
+            config.arena_memory = chunk_memory.chunk;
+            config.arena_memory_size = chunk_size;
+            config.retire_reclaim_flags = (uint64)RetireReclaimFlags::RetiredFlag;
+            return FastArenaView::create(Memory::from(chunk_memory.handle), config);
+        }
+
+        [[nodiscard]] FastArena* _construct_small_allocator_arena(ThreadLocalAllocator* tla, RegionChunkAllocation chunk_allocation, uint64 alignment) {
+            return _construct_arena(tla, chunk_allocation, alignment, (uint64)RegionChunkType::FastArenaSmallAllocator);
+        }
+
+        [[nodiscard]] FastArena* _construct_step_split_arena(ThreadLocalAllocator* tla, RegionChunkAllocation chunk_allocation, uint64 alignment) {
+            return _construct_arena(tla, chunk_allocation, alignment, (uint64)RegionChunkType::FastArenaStepSplitAllocator);
+        }
+
+        [[nodiscard]] FastArena* _acquire_new_arena(ThreadLocalAllocator* tla, uint64 size, uint64 alignment, uint64 arena_type) {
+            auto chunk_allocation = _allocate_chunk(tla, size, alignment);
+            if (!chunk_allocation) {
+                return nullptr;
+            }
+            auto* arena = _construct_arena(tla, chunk_allocation, alignment, arena_type);
+            CUW3_CHECK(arena, "failed to construct small arena");
+            return arena;
+        }
+
+        [[nodiscard]] AcquiredResource _allocate_small_allocator(ThreadLocalAllocator* tla, uint64 size, uint64 alignment) {
             auto acquired_res = tla->small_allocator.acquire(size, alignment);
             if (acquired_res.status_no_resource()) {
-                
+                auto* arena = _acquire_new_arena(tla, size, alignment, (uint64)RegionChunkType::FastArenaSmallAllocator);
+                if (!arena) {
+                    return AcquiredResource::no_resource();
+                }
+                return AcquiredResource::acquired(tla->small_allocator.allocate(arena, size));
             }
             if (acquired_res.status_acquired()) {
                 return AcquiredResource::acquired(tla->small_allocator.allocate(acquired_res.get(), size));
@@ -132,12 +198,23 @@ namespace cuw3 {
             return AcquiredResource::failed();
         }
 
-        AcquiredResource _allocate_step_split_allocator(ThreadLocalAllocator* tla, uint64 size, uint64 alignment) {
-            auto acquired_res = tla->step_split_allocator;
-
+        // TODO : this seems to damn like _allocate_small_allocator
+        [[nodiscard]] AcquiredResource _allocate_step_split_allocator(ThreadLocalAllocator* tla, uint64 size, uint64 alignment) {
+            auto acquired_res = tla->step_split_allocator.acquire_arena(size, alignment);
+            if (acquired_res.status_no_resource()) {
+                auto* arena = _acquire_new_arena(tla, size, alignment, (uint64)RegionChunkType::FastArenaStepSplitAllocator);
+                if (!arena) {
+                    return AcquiredResource::no_resource();
+                }
+                return AcquiredResource::acquired(tla->step_split_allocator.allocate(arena, size));
+            }
+            if (acquired_res.status_acquired()) {
+                return AcquiredResource::acquired(tla->step_split_allocator.allocate(acquired_res.get(), size));
+            }
+            return AcquiredResource::failed();
         }
 
-        AcquiredResource allocate(ThreadLocalAllocator* tla, uint64 size, uint64 alignment) {
+        [[nodiscard]] AcquiredResource allocate(ThreadLocalAllocator* tla, uint64 size, uint64 alignment) {
             // TODO : alg
             // find what size category does this allocation fall too (whta allocator to use)
             // try to acquire appropriate arena
@@ -150,20 +227,100 @@ namespace cuw3 {
             return _allocate_step_split_allocator(tla, size, alignment);
         }
 
-        void deallocate(void* ptr, uint64 size) {
+        struct DeallocationContext {
+            RegionChunkAllocation chunk_allocation{};
+            RegionChunkMemory chunk_memory{};
+            FastArena* arena{};
+            ThreadLocalAllocator* arena_tla{};
+        };
+
+        // TODO : decommit this motherfucker
+        void _destroy_arena(ThreadLocalAllocator* tla, FastArena* arena) {
+            // TODO : view? or maybe allow simple access to the fields
+            // TODO : check return value
+            // TODO : check resource fucking acquisition
+            // TODO : check order
+            // TODO : check! check! check! check! whole night! you trapped me motherfucker!
+            vmem_decommit(arena->arena_memory, arena->arena_memory_size);
+            tla->total_chunk_storage_size -= arena->arena_memory_size;
+            rca.deallocate_chunk({arena->arena_memory, arena});
+        }
+
+        void _deallocate(ThreadLocalAllocator* tla, const DeallocationContext& context, void* ptr, uint64 size) {
+            FastArena* released_arena{};
+            auto type = FastArenaView{context.arena}.type();
+            if (type == (uint64)RegionChunkType::FastArenaSmallAllocator) {
+                released_arena = tla->small_allocator.deallocate(context.arena, ptr, size);                
+            } else if (type == (uint64)RegionChunkType::FastArenaStepSplitAllocator) {
+               released_arena = tla->step_split_allocator.deallocate(context.arena, ptr, size);                
+            } else {
+                CUW3_ABORT("Invalid arena type detected");
+            }
+            if (released_arena) {
+                _destroy_arena(tla, released_arena);
+            }
+        }
+
+        // we dont care here about the retire-reclaim flags
+        // we could have cared, in fact and it would have made our life kind of ... easier?
+        void _deallocate_non_owner(ThreadLocalAllocator* tla, const DeallocationContext& context, void* ptr, uint64 size) {
+            auto type = FastArenaView{context.arena}.type();
+            if (type == (uint64)RegionChunkType::FastArenaSmallAllocator) {
+                (void)context.arena_tla->small_allocator.retire(context.arena, ptr, size);
+            } else if (type == (uint64)RegionChunkType::FastArenaStepSplitAllocator) {
+                (void)context.arena_tla->step_split_allocator.retire(context.arena, ptr, size);
+            } else {
+                CUW3_ABORT("Invalid arena type detected");
+            }
+        }
+
+        void deallocate(ThreadLocalAllocator* tla, void* ptr, uint64 size) {
             // locate the handle
             // find the type of the allocator and its owner (tla)
             // find if current thread owns the allocation or not
             // deallocate if it own. recycle the allocator if necessary
             // retire if we dont own it
+            auto chunk_allocation = rca.ptr_to_allocation(ptr);
+            CUW3_CHECK(chunk_allocation, "attempt to deallocate invalid pointer");
+
+            auto chunk_memory = rca.region_data_to_memory(chunk_allocation.region, chunk_allocation.chunk, chunk_allocation.handle);
+            auto* arena = (FastArena*)chunk_memory.handle;
+            auto arena_view = FastArenaView{arena};
+            auto* arena_tla = (ThreadLocalAllocator*)arena_view.owner();
+            auto context = DeallocationContext{chunk_allocation, chunk_memory, arena, arena_tla};
+            if (arena_tla == tla) {
+                _deallocate(tla, context, ptr, size);
+            }
+            _deallocate_non_owner(arena_tla, context, ptr, size);
         }
 
-        void _deallocate(ThreadLocalAllocator* tla, void* ptr, uint64 size) {
-            // TODO : alg
+        // TODO : these two functions look the same
+        void _reclaim_small_allocator(ThreadLocalAllocator* tla) {
+            auto reclaim_list = tla->small_allocator.reclaim_arenas();
+            while (reclaim_list) {
+                auto* arena = reclaim_list.pop();
+                auto* released_arena = tla->small_allocator.reclaim_arena(arena);
+                if (released_arena) {
+                    _destroy_arena(tla, released_arena);
+                }
+            }
         }
 
-        void _deallocate_non_owner(ThreadLocalAllocator* tla, void* ptr, uint64 size) {
-            // TODO : alg
+        void _reclaim_step_split_allocator(ThreadLocalAllocator* tla) {
+            auto reclaim_list = tla->step_split_allocator.reclaim_arenas();
+            while (reclaim_list) {
+                auto* arena = reclaim_list.pop();
+                auto* released_arena = tla->step_split_allocator.reclaim_arena(arena);
+                if (released_arena) {
+                    _destroy_arena(tla, released_arena);
+                }
+            }
+        }
+
+        // NOTE: can be made smarter. We can limit reclamation amount. But guess what? I don't want to implement this any longer!
+        void reclaim(ThreadLocalAllocator* tla) {
+            _reclaim_small_allocator(tla);
+            _reclaim_step_split_allocator(tla);
         }
 
 

@@ -188,6 +188,10 @@ namespace cuw3 {
             return arena->region_chunk_header.data();
         }
 
+        void* owner() const {
+            return arena->region_chunk_header.owner();
+        }
+
         void* data_end() const {
             return advance_ptr(arena->arena_memory, arena->arena_memory_size);
         }
@@ -1496,4 +1500,6 @@ namespace cuw3 {
         FastArenaRetiredArenasRoot retired_arenas{};
         FastArenaSmallBins bins{};
     };
+
+    // TODO : allocator acn be really refactored into: allocator + arena size data structure
 }

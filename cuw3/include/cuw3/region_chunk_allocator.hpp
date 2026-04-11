@@ -395,12 +395,13 @@ namespace cuw3 {
     inline constexpr int region_allocator_alloc_attempts = 2;
 
     struct RegionChunkAllocParams {
-        int rounds = -1;
-        int attempts = -1;
+        int rounds = -1; // chunk allocation attempts
+        int attempts = -1; // pool allocation attempts
         uint split_start = 0;
         uint split_step = 1;
     };
 
+    // TODO : must include chunk size
     struct RegionChunkAllocation {
         explicit operator bool() const {
             return valid();
@@ -424,6 +425,7 @@ namespace cuw3 {
         uint32 split{};
     };
 
+    // TODO : reconsider naming
     struct RegionChunkMemory {
         explicit operator bool() const {
             return valid();
@@ -524,7 +526,6 @@ namespace cuw3 {
                 if (handle == region_chunk_allocator_failed_value) {
                     chunk_seen = true;
                     continue;
-
                 }
                 if (handle == region_chunk_allocator_null_value) {
                     handle = pools->allocate_from_stack(region, split);
@@ -555,6 +556,19 @@ namespace cuw3 {
             return regions_int <= ptr_int && ptr_int < regions_end_int;
         }
 
+        uint64 get_max_chunk_size() const {
+            return specs->region_specs[specs->num_regions - 1].get_chunk_size();
+        }
+
+        uint64 get_num_regions() const {
+            return specs->num_regions;
+        }
+
+        const RegionSpec& get_region_spec(uint64 region) const {
+            CUW3_CHECK(region < specs->num_regions, "invalid region");
+            return specs->region_specs[region];
+        }
+
         [[nodiscard]] uint32 index_from_handle(void* handle) {
             if (!is_valid_handle(handle)) {
                 return region_chunk_allocator_null_value;
@@ -572,6 +586,7 @@ namespace cuw3 {
             return specs->get_handle(handles, handle_id);
         }
 
+        // TODO : rename & reconsider input parameters
         [[nodiscard]] RegionChunkMemory region_data_to_memory_no_check(uint32 region, uint32 chunk, uint32 handle) {
             auto& region_specs = specs->region_specs[region];
             void* chunk_mem = region_specs.get_chunk(regions, chunk);
@@ -579,6 +594,7 @@ namespace cuw3 {
             return {chunk_mem, handle_mem};
         }
 
+        // TODO : rename & reconsider input parameters
         [[nodiscard]] RegionChunkMemory region_data_to_memory(uint32 region, uint32 chunk, uint32 handle) {
             CUW3_CHECK_RETURN_VAL(region < specs->num_regions, {}, "invalid region");
             CUW3_CHECK_RETURN_VAL(handle < specs->num_handles, {}, "invalid handle");
