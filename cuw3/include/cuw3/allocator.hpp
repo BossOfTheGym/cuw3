@@ -144,25 +144,43 @@ namespace cuw3 {
 
         [[nodiscard]] FastArena* _construct_arena(ThreadLocalAllocator* tla, RegionChunkAllocation chunk_allocation, uint64 alignment, uint64 type) {
             // TODO : no_check can be used
-            RegionChunkMemory chunk_memory = rca.region_data_to_memory(chunk_allocation.region, chunk_allocation.chunk, chunk_allocation.handle);
-            if (!chunk_memory) {
-                return nullptr;
-            }
 
+            RegionChunkMemory chunk_memory{};
+            uint64 chunk_size{};
+            FastArenaConfig config{};
+            FastArena* arena{};
+
+            chunk_memory = rca.region_data_to_memory(chunk_allocation.region, chunk_allocation.chunk, chunk_allocation.handle);;
+            if (!chunk_memory) {
+                goto failed_to_allocate_chunk;
+            }
+            
             // TODO : stupid as hell, but I'm gonna put somewhere else later
-            uint64 chunk_size = rca.get_region_spec(chunk_allocation.region).get_chunk_size();
+            chunk_size = rca.get_region_spec(chunk_allocation.region).get_chunk_size();
+
             // TODO : check return value
             // TODO : check resource destruction order
-            vmem_commit(chunk_memory.chunk, chunk_size);
+            if (!vmem_commit(chunk_memory.chunk, chunk_size)) {
+                goto failed_to_commit;
+            }
 
-            FastArenaConfig config{};
             config.owner = tla;
             config.arena_type = type;
             config.arena_alignment = alignment;
             config.arena_memory = chunk_memory.chunk;
             config.arena_memory_size = chunk_size;
             config.retire_reclaim_flags = (uint64)RetireReclaimFlags::RetiredFlag;
-            return FastArenaView::create(Memory::from(chunk_memory.handle), config);
+
+            arena = FastArenaView::create(Memory::from(chunk_memory.handle), config);
+            if (arena) {
+                return arena;
+            }
+            // fallthrough
+
+        failed_to_commit:
+            rca.deallocate_chunk(chunk_memory);
+        failed_to_allocate_chunk:
+            return nullptr;
         }
 
         [[nodiscard]] FastArena* _construct_small_allocator_arena(ThreadLocalAllocator* tla, RegionChunkAllocation chunk_allocation, uint64 alignment) {
