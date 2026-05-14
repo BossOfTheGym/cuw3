@@ -5,7 +5,6 @@
 
 // TODO : add check_critical
 // TODO : add macro that disables all checks but critical
-
 // TODO : describe when to use each of the utilities
 
 // TODO : something more fancy, this is mostly a stub
@@ -25,29 +24,26 @@ do {\
     }\
 } while(0)
 
-// TODO : print message
-#define CUW3_CHECK_RETURN_VAL(cond, value, ...) \
+#define CUW3_CHECK_RETURN_VAL(cond, value, msg) \
     do { \
         if (!(cond)) { \
-            std::cerr << #cond << std::endl; \
+            std::cerr << #cond << " " << msg << std::endl; \
             return value; \
         } \
     } while(0)
 
-#define CUW3_CHECK_RETURN_VOID(cond, ...) \
+#define CUW3_CHECK_RETURN_VOID(cond, msg) \
     do { \
         if (!(cond)) { \
-            std::cerr << #cond << std::endl; \
+            std::cerr << #cond << " " << msg << std::endl; \
             return; \
         } \
     } while(0)
 
-#define CUW3_CHECK_GOTO(cond, label, ...) \
+#define CUW3_CHECK_GOTO(cond, label, msg) \
     do { \
         if (!(cond)) { \
-            std::cerr << #cond << std::endl; \
+            std::cerr << #cond << " " << msg << std::endl; \
             goto label; \
         } \
     } while(0)
-
-namespace cuw3 {}

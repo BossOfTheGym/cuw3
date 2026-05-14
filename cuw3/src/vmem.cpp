@@ -18,7 +18,7 @@ namespace cuw3 {
     }
 
     CUW3_API usize vmem_huge_page_size() {
-        return GetLargePageMinimum(); // typically 2MiB
+        return std::max<usize>(GetLargePageMinimum(), CUW3_HUGEPAGE_SIZE); // typically 2MiB
     }
 
     CUW3_API usize vmem_alloc_granularity() {

@@ -1,13 +1,5 @@
 enable_testing()
 
-
-add_executable_ext(dummy dummy.cpp)
-target_link_libraries(dummy cuw3)
-
-add_executable_ext(test_vmem_dummy test_vmem_dummy.cpp)
-target_link_libraries(test_vmem_dummy cuw3)
-
-
 add_executable_ext(test_atomic test_atomic.cpp)
 target_link_libraries(test_atomic cuw3)
 
@@ -29,5 +21,7 @@ target_link_libraries(test_thread_graveyard cuw3)
 add_executable_ext(test_vmem test_vmem.cpp)
 target_link_libraries(test_vmem cuw3)
 
+add_executable_ext(test_cuw3 test_cuw3.cpp)
+target_link_libraries(test_cuw3 cuw3)
 
-add_test(NAME dummy COMMAND dummy)
+#add_test(NAME dummy COMMAND dummy)

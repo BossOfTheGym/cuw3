@@ -6,6 +6,8 @@
 #include "backoff.hpp"
 #include "retire_reclaim.hpp"
 
+// debug
+#include <mutex>
 
 namespace cuw3 {
     // grave consists of slots and common retire list
@@ -171,6 +173,7 @@ namespace cuw3 {
     };
     
     // default list ops for graveyards
+    // manipulates DefaultThreadGraveyardEntry entities
     struct DefaultThreadGraveyardOps {
         void set_next(void* node, void* next) {
             ((DefaultThreadGraveyardEntry*)node)->next = (DefaultThreadGraveyardEntry*)next;
@@ -263,6 +266,9 @@ namespace cuw3 {
         // API
         template<class NodeOps>
         [[nodiscard]] ThreadGraveData acquire(NodeOps&& node_ops, ThreadGraveAcquireParams acquire_params) {
+            // debug
+            //auto lock_guard = std::lock_guard{debug_lock};
+
             ThreadGraveyardBackoff backoff{};
             for (uint round = acquire_params.rounds; round != 0; round -= round > 0) {
                 auto grave_data = _acquire(acquire_params);
@@ -278,6 +284,9 @@ namespace cuw3 {
         void release_thread(ThreadGraveData grave_data) {
             CUW3_CHECK(grave_data.valid() && grave_data.thread && grave_data.grave_num <= num_grave_entries, "invalid entry provided");
 
+            // debug
+            //auto lock_guard = std::lock_guard{debug_lock};
+
             if (grave_data.grave_num < num_grave_entries) {
                 auto grave_ptr_view = ThreadGravePtrView{&grave_entries[grave_data.grave_num].grave};
                 grave_ptr_view.release_grave();
@@ -288,6 +297,9 @@ namespace cuw3 {
         template<class NodeOps>
         void put_thread_back(ThreadGraveData grave_data, NodeOps&& node_ops) {
             CUW3_CHECK(grave_data.valid() && grave_data.thread && grave_data.grave_num <= num_grave_entries, "invalid entry provided");
+
+            // debug
+            //auto lock_guard = std::lock_guard{debug_lock};
 
             if (grave_data.grave_num < num_grave_entries) {
                 auto grave_ptr_view = ThreadGravePtrView{&grave_entries[grave_data.grave_num].grave};
@@ -304,6 +316,9 @@ namespace cuw3 {
         template<class NodeOps>
         void put_thread_to_rest(void* thread, NodeOps&& node_ops) {
             CUW3_CHECK(thread, "attempt to put nullptr thread into the grave");
+
+            // debug
+            //auto lock_guard = std::lock_guard{debug_lock};
 
             node_ops.reset_next(thread);
             node_ops.reset_skip(thread);
@@ -333,6 +348,9 @@ namespace cuw3 {
             void* aux_graves{}; // atomic
         };
         
+        // debug
+        //std::recursive_mutex debug_lock{};
+
         uint num_grave_entries{}; // readonly
     };
 }

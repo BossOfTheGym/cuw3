@@ -1,5 +1,2 @@
-* implement thread_local_allocator
-* implement malloc/free
 * inspect conf.hpp
-
-* gtest (fuck gtest)
+* update with all TODOs

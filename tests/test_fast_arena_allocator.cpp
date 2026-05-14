@@ -762,8 +762,8 @@ namespace fast_arena_allocator_tests {
         config.num_splits_log2 = 7;
         config.min_arena_step_size_log2 = 9;
         config.max_arena_step_size_log2 = 15;
-        config.min_arena_alignment_log2 = conf_fast_arena_min_alignment_pow2;
-        config.max_arena_alignment_log2 = conf_fast_arena_max_alignment_pow2;
+        config.min_arena_alignment_log2 = conf_fast_arena_min_alignment_log2;
+        config.max_arena_alignment_log2 = conf_fast_arena_max_alignment_log2;
 
         CUW3_CHECK(FastArenaBinsInfo::create(Memory::from(&bins), config), "failed to initialize arena");
 
@@ -771,7 +771,7 @@ namespace fast_arena_allocator_tests {
         {
             uint expected_bin = bins.num_step_splits - 1;
             uint size = bins.get_global_max_alloc_size();
-            for (uint step = 0; step < bins.num_steps - 1; step++) {
+            for (uint step = 0; step < bins.num_steps; step++) {
                 uint curr_step = intpow2(bins.max_arena_step_size_log2 - step);
                 uint curr_split = divpow2(curr_step, bins.num_splits_log2);
                 for (uint split = 0; split < bins.num_splits; split++) {
@@ -812,7 +812,7 @@ namespace fast_arena_allocator_tests {
         {
             uint expected_bin = bins.num_step_splits - 1;
             uint size = bins.get_global_max_alloc_size();
-            for (uint step = 0; step < bins.num_steps - 1; step++) {
+            for (uint step = 0; step < bins.num_steps; step++) {
                 uint curr_step = intpow2(bins.max_arena_step_size_log2 - step);
                 uint curr_split = divpow2(curr_step, bins.num_splits_log2);
                 for (uint split = 0; split < bins.num_splits; split++) {

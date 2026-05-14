@@ -82,7 +82,7 @@ namespace cuw3 {
                 node_ops.set_next(node, head_old.next);
 
                 auto head_new = ListHead{head_old.version + 1, node};
-                if (head_ref.compare_exchange_strong(head_old, head_new, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                if (head_ref.compare_exchange_strong(head_old, head_new, std::memory_order_acq_rel)) {
                     return true;
                 }
                 backoff();
@@ -104,7 +104,7 @@ namespace cuw3 {
                     return null_link;
                 }
                 auto head_new = ListHead{head_old.version + 1, node_ops.get_next(head_old.next)};
-                if (head_ref.compare_exchange_strong(head_old, head_new, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                if (head_ref.compare_exchange_strong(head_old, head_new, std::memory_order_acq_rel)) {
                     return head_old.next;
                 }
                 backoff();

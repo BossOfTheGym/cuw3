@@ -54,7 +54,7 @@ namespace cuw3 {
     
     using RegionChunkPoolLinkType = uint32;
 
-    // TODO : make things atomic
+    // NOTE : things must be atomic if we need to change the owner
     // this struct must be at the beginning of each handle
     struct RegionChunkHandleHeader {
         static RegionChunkHandleHeader from(void* owner, uint64 data) {

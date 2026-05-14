@@ -11,6 +11,10 @@ namespace cuw3 {
             return {memory, (uintptr)sizeof(T)};
         }
 
+        static Memory from(void* memory, uintptr size) {
+            return {memory, size};
+        }
+
 
         template<class T>
         bool fits() const {

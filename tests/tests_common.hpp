@@ -2,6 +2,7 @@
 
 #include <latch>
 #include <mutex>
+#include <queue>
 #include <vector>
 #include <thread>
 #include <future>
@@ -9,6 +10,7 @@
 #include <utility>
 #include <numeric>
 #include <barrier>
+#include <optional>
 #include <iostream>
 #include <algorithm>
 #include <functional>

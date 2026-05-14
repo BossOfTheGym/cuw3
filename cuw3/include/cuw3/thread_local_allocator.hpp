@@ -18,7 +18,7 @@ namespace cuw3 {
     using ThreadGraveyardEntry = DefaultThreadGraveyardEntry;
     using ThreadGraveyardOps = DefaultThreadGraveyardOps;
 
-    // TODO : this little body gets little bit fused with allocator.hpp itself
+    // TODO : this little buddy gets little bit fused with allocator.hpp itself
     // * probably it is a good idea just to move it into the allocator.hpp next to the main allocator data structure 
     // thread local allocator: core structure that holds context of all allocator types 
     // this type is not relocatable: its address must remain constant during lifetime
@@ -31,8 +31,6 @@ namespace cuw3 {
             CUW3_CHECK_RETURN_VAL(memory.fits<ThreadLocalAllocator>(), nullptr, "invalid memory");
 
             auto* tla = new (memory.get()) ThreadLocalAllocator{};
-            list_init(tla->graveyard_ptr(), ThreadGraveyardOps{});
-            
             auto* step_split_allocator = FastArenaStepSplitAllocator::create(Memory::from(&tla->step_split_allocator), config.step_split_alloc_config);
             CUW3_CHECK_RETURN_VAL(step_split_allocator, nullptr, "failed to create step_split_allocator");
 
@@ -43,8 +41,12 @@ namespace cuw3 {
         }
 
         // just to be sure that it is consistent with ThreadGraveyardOps
-        ThreadGraveyardEntry* graveyard_ptr() {
+        ThreadGraveyardEntry* graveyard_entry_ptr() {
             return &graveyard_entry;
+        }
+
+        bool empty() const {
+            return step_split_allocator.empty() && small_allocator.empty();
         }
 
         ThreadGraveyardEntry graveyard_entry{};
@@ -52,11 +54,15 @@ namespace cuw3 {
         FastArenaSmallAllocator small_allocator{};
 
         // TODO : do something with it later
+        // TODO : this must be moved into the aux thread context
+        // all this fields are in cuw3.cpp
         // kind of a workaround that will rest here for now
         // not that much of a workaround... well, not that much...
         // just a little workaround, Stan
+        uint64 thread_id{}; // for debug purposes only
         uint64 total_chunk_storage_size{};
         uint64 last_chunk_pool_split_id[conf_max_region_sizes] = {};
         uint64 last_graveyard_id{};
+        uint64 extended_free_counter{};
     };
 }

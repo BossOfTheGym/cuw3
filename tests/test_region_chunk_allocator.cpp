@@ -1,17 +1,8 @@
 #include "cuw3/conf.hpp"
-#include "cuw3/vmem.hpp"
 #include "cuw3/region_chunk_allocator.hpp"
 
-#include <queue>
-#include <mutex>
-#include <atomic>
-#include <memory>
 #include <vector>
-#include <random>
 #include <barrier>
-#include <variant>
-#include <algorithm>
-#include <condition_variable>
 
 #include "tests_common.hpp"
 
