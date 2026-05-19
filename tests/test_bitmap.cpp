@@ -15,7 +15,6 @@ std::ostream& operator<<(std::ostream& os, const Bitmap<T, bits>& bm) {
     return os;
 }
 
-// TODO : split this up to several tests
 void test_bitmap() {
     CuwBitmap bitmap{};
 

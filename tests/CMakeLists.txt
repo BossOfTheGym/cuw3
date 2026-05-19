@@ -9,9 +9,6 @@ target_link_libraries(test_bitmap cuw3)
 add_executable_ext(test_fast_arena_allocator test_fast_arena_allocator.cpp)
 target_link_libraries(test_fast_arena_allocator cuw3)
 
-add_executable_ext(test_funcs test_funcs.cpp)
-target_link_libraries(test_funcs cuw3)
-
 add_executable_ext(test_region_chunk_allocator test_region_chunk_allocator.cpp)
 target_link_libraries(test_region_chunk_allocator cuw3)
 

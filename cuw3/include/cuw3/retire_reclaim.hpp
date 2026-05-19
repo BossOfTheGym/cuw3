@@ -8,8 +8,6 @@
 #include "assert.hpp"
 
 namespace cuw3 {
-    // TODO : check explanations
-
     // Explanation:
     // we have a resource
     // resource is split down to subresources
@@ -23,7 +21,7 @@ namespace cuw3 {
     // 
     // this is, in fact, what we call to 'retire' here.
     // 'retired' means 'has some subresource to reclaim'. hold for root resource and all intermediate subresources in the hierarchy
-    // if subresource is a leave (the highest in the hierarchy, is not further split to ) then if it is 
+    // if subresource is a leaf (the highest in the hierarchy) then it is not split and exists as it is
     //
     // this is used mainly by threads that do not own the allocated memory so they have to postpone its deallocation
     // non-owning thread retires some subresource and owning thread reclaims it later
@@ -33,25 +31,25 @@ namespace cuw3 {
     // only one thread must reclaim some subresources at once
     // retiring thread does not know if the parent resource becomes unused so it never checks this fact - it just retires parent resource as well
     // yes, thread that retires some subresource must retire whole down-the-root-going chain of dependent resources
-    // no, if some resource is retired it does not mean that this reource is completely unused: only that there is some subresource up the hierarchy
-    //   that must be reclaimed.
+    // no, if some resource is retired it does not mean that this resource is completely unused: only that there is some subresource up the hierarchy
+    // that must be reclaimed.
     // yes, after we have reclaimed everything under some retired resource, resource itself may become completely unused => it must be released
-    // if root resource (like thread allocator completely exausted) we can free root as there will be no other users of the subresource
+    // if root resource is free (like thread allocator completely exausted) we can free root as there will be no other users of the subresource
     //
-    // original owning thread of the root resource (and all of its subresources) is called just owner
+    // original owning thread of the root resource (and all of its subresources) is called owner
     // whatever thread is responsible for reclaiming resources is called reclaiming thread
     //
-    // owner in most of the cases serves as reclaiming thread (until it wants to die to dissolve into the void)
+    // owner in most of the cases serves as reclaiming thread (until it wants to die)
     // thus, it raises 'retired' state on the root resource. it snatches retired resources from the root but keeps the retired flag raised.
     // this way no other retiring thread can retire the root (already considered retired) and become reclaiming thread itself.
     // when owning thread desires to die it continuously attempts to release retire status of the root resource reclaiming all resources that it sees
     // ... or it just may want to send it to the graveyard:) from where root can be reclaimed later
     // same strategy applies to any other thread who will successfully become reclaiming after owner died
-    // if any thread decides that it has enough of reclaiming and it wants to send this stupid bitch to grave
+    // if any thread decides that it has enough of reclaiming and it wants to send this to grave
     // * it must retain retire status
-    // * ... move it into the fucking grave already, dumbass
+    // * ... move it into the grave already
     // * whenever you excavate it from the grave (gain exclusive access) then ... it is no longer in the grave you may not even attempt to put it back
-    // * just do not forget to reset grave status and repeat retire flag release porocedure as was mentioned before
+    // * just do not forget to reset grave status and repeat retire flag release procedure as was mentioned before
     //   * or you will have to put it back into the grave!
     //
     // more concrete matters
@@ -68,7 +66,6 @@ namespace cuw3 {
     // depth of the hierarchy here does not matter
     // this is a lock-free algorithm
 
-    // TODO : move it somewhere
     // implementation forethought
     //
     // handle list pointer (32 bits)
@@ -77,7 +74,7 @@ namespace cuw3 {
     // maybe another list pointer to postpone reclamation if we need to reclaim way too much (it may delay current operation too much)
     //
     // let's sum up:
-    // 1. thread pointer + allocator type | handle next + none -> offset ptr (universal handle header) TODO : impose alignment constraint on thread allocator
+    // 1. thread pointer + allocator type
     // 2. retire-reclaim pointer -> offset ptr
     // 3. list pointer to store all of the retired handles
     // 4. maybe list pointer that stores some postponed reclaimed resources
@@ -93,15 +90,13 @@ namespace cuw3 {
     //
     // when you reclaim some resource you must always reclaim subresource, reset its retired flag if it is not released
     // this is crucial because otherwise subresource would not be able to retire when it is required (it would think it is already retired)
-    // if subresource cannot be properly reclaim it must be postponed then
+    // if subresource cannot be properly reclaimed it must be postponed then
     using RetireReclaimRawPtr = uint64;
     
     inline constexpr RetireReclaimRawPtr retire_reclaim_flag_bits = 1;
 
     using RetireReclaimPtr = AlignmentPackedPtr<RetireReclaimRawPtr, retire_reclaim_flag_bits>;
 
-    // NOTE: even though alignment of16 is only required for root as it is the only resource that has all 4 flags
-    // but for the sake of simplicity this will be common requirement for all of the resources
     enum class RetireReclaimFlags : RetireReclaimRawPtr {
         // read-write, thread who retires can set this flag, reclaiming thread can reset this flag
         // retiring thread whenever sees that this flag has already been set stops retiring process

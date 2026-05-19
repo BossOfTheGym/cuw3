@@ -167,7 +167,13 @@ void test_graveyard_chaos_mt(uint num_elements, uint num_threads, uint acquire_s
 
 int main() {
     test_graveyard_st(16);
-    test_graveyard_chaos_mt(8 * 1024, 8, 1 << 12);
+
+    std::cout << "test_graveyard_chaos_mt(128, 2, 1 << 12)" << std::endl;
+    test_graveyard_chaos_mt(128, 2, 1 << 12);
+    std::cout << "test_graveyard_chaos_mt(8, 8, 1 << 17)" << std::endl;
+    test_graveyard_chaos_mt(8, 8, 1 << 17);
+    std::cout << "test_graveyard_chaos_mt(128, 8, 1 << 12)" << std::endl;
+    test_graveyard_chaos_mt(128, 8, 1 << 12);
 
     std::cout << "it's done!" << std::endl;
 

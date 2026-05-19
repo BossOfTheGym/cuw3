@@ -206,7 +206,7 @@ namespace cuw3 {
 
             // we are always guaranteed to have enough set bits in the set
             // must never happen
-            CUW3_ABORT("unreachable");
+            CUW3_ABORT_CRITICAL("unreachable");
         }
 
         gsize get_last_set_bit(gsize start = 0) const {

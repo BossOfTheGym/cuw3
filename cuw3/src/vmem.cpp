@@ -85,6 +85,7 @@ namespace cuw3 {
 #include <sys/mman.h>
 
 #include "cuw3/defs.hpp"
+#include "cuw3/conf.hpp"
 #include "cuw3/vmem.hpp"
 #include "cuw3/funcs.hpp"
 
@@ -96,8 +97,8 @@ namespace cuw3 {
     }
 
     CUW3_API usize vmem_huge_page_size() {
-        // TODO : workaround, read this value from /proc/meminfo
-        return CUW3_HUGEPAGE_SIZE; // typically 2MiB
+        // NOTE : workaround, this value better be read from /proc/meminfo
+        return conf_hugepage_size; // typically 2MiB
     }
 
     CUW3_API usize vmem_alloc_granularity() {
@@ -136,7 +137,7 @@ namespace cuw3 {
         
         void* aligned_mem = align(raw_mem, address_alignment);
         
-        // TODO : ability to place memory on some aligned address without actually aligning size sounds ... questionable???
+        // THINK : ability to place memory on some aligned address without actually aligning size sounds ... questionable???
         // size must be aligned to page boundary or range boundaries will be broken (tail range may start not on page boundary)
         // tail always exists, head may be empty
         usize head_size = subptr(aligned_mem, raw_mem);

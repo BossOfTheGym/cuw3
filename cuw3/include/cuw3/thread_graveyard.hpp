@@ -35,7 +35,7 @@ namespace cuw3 {
 
     using ThreadGravePtr = AlignmentPackedPtr<ThreadGraveRawPtr, 1>;
     
-    // TODO : rework statuses
+    // THINK : those statuses do not help but only make things more complicated. They do not clarify what is going on.
     struct ThreadGravePtrHelper {
         static ThreadGravePtr acquired_state() { return ThreadGravePtr::packed(nullptr, (ThreadGraveRawPtr)ThreadGravePtrFlags::Acquired); }
         static ThreadGravePtr empty_state() { return {}; }
@@ -83,7 +83,7 @@ namespace cuw3 {
                 return false;
             }
             auto grave_ptr_new = ThreadGravePtr::packed(thread, 0);
-            return grave_ptr_ref.compare_exchange_strong(grave_ptr_old, grave_ptr_new, std::memory_order_acq_rel, std::memory_order_relaxed);
+            return grave_ptr_ref.compare_exchange_strong(grave_ptr_old, grave_ptr_new, std::memory_order_acq_rel);
         }
 
         // ptr can be whatever you like (null would simply mean that you want to free the grave)
@@ -130,7 +130,7 @@ namespace cuw3 {
         Null,
     };
 
-    // TODO : rework statuses
+    // THINK : those status names do not help and only confuse. They better be reworked.
     struct ThreadGraveData {
         explicit operator bool() const {
             return valid();
@@ -266,8 +266,7 @@ namespace cuw3 {
         // API
         template<class NodeOps>
         [[nodiscard]] ThreadGraveData acquire(NodeOps&& node_ops, ThreadGraveAcquireParams acquire_params) {
-            // debug
-            //auto lock_guard = std::lock_guard{debug_lock};
+            //auto lock = std::lock_guard{debug_lock}; // debug
 
             ThreadGraveyardBackoff backoff{};
             for (uint round = acquire_params.rounds; round != 0; round -= round > 0) {
@@ -284,8 +283,7 @@ namespace cuw3 {
         void release_thread(ThreadGraveData grave_data) {
             CUW3_CHECK(grave_data.valid() && grave_data.thread && grave_data.grave_num <= num_grave_entries, "invalid entry provided");
 
-            // debug
-            //auto lock_guard = std::lock_guard{debug_lock};
+            //auto lock = std::lock_guard{debug_lock}; // debug
 
             if (grave_data.grave_num < num_grave_entries) {
                 auto grave_ptr_view = ThreadGravePtrView{&grave_entries[grave_data.grave_num].grave};
@@ -298,8 +296,7 @@ namespace cuw3 {
         void put_thread_back(ThreadGraveData grave_data, NodeOps&& node_ops) {
             CUW3_CHECK(grave_data.valid() && grave_data.thread && grave_data.grave_num <= num_grave_entries, "invalid entry provided");
 
-            // debug
-            //auto lock_guard = std::lock_guard{debug_lock};
+            //auto lock = std::lock_guard{debug_lock}; // debug
 
             if (grave_data.grave_num < num_grave_entries) {
                 auto grave_ptr_view = ThreadGravePtrView{&grave_entries[grave_data.grave_num].grave};
@@ -317,8 +314,7 @@ namespace cuw3 {
         void put_thread_to_rest(void* thread, NodeOps&& node_ops) {
             CUW3_CHECK(thread, "attempt to put nullptr thread into the grave");
 
-            // debug
-            //auto lock_guard = std::lock_guard{debug_lock};
+            //auto lock = std::lock_guard{debug_lock}; // debug
 
             node_ops.reset_next(thread);
             node_ops.reset_skip(thread);
@@ -348,9 +344,8 @@ namespace cuw3 {
             void* aux_graves{}; // atomic
         };
         
-        // debug
-        //std::recursive_mutex debug_lock{};
-
         uint num_grave_entries{}; // readonly
+
+        std::recursive_mutex debug_lock{};
     };
 }

@@ -5,24 +5,14 @@ option(CUW3_BUILD_EXAMPLES "build examples" ON)
 option(CUW3_BUILD_BENCHMARKS "build benchmarks" ON)
 option(CUW3_BUILD_SHARED "build as shared library" ON)
 
-set(CUW3_BUILD_CONFIG $<CONFIG>) # TODO : check
+option(CUW3_DISABLE_GENERAL_CHECKS "disable general checks and assertions" OFF)
+option(CUW3_DISABLE_CRITICAL_CHECKS "disable critical checks" OFF)
+
+set(CUW3_BUILD_CONFIG $<CONFIG>)
 
 set(CUW3_VERSION_MAJOR 0)
 set(CUW3_VERSION_MINOR 0)
 set(CUW3_VERSION ${CUW3_VERSION_MAJOR}.${CUW3_VERSION_MINOR})
-
-# TODO : clang compiler selection
-# TODO : assert & abort definitions
-# TODO : consts definitions
-# TODO : config definitions
-# TODO : set definitions
-#if(WIN32)
-#	#set(platform "windows")
-#elseif(UNIX)
-#	#set(platform "unix")
-#else()
-#    message(FATAL_ERROR "unknown platform")
-#endif()
 
 if (MSVC)
 	add_compile_options("/Zc:preprocessor") # __VA_OPT__ fix for MSVC

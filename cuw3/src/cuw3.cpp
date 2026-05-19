@@ -11,6 +11,9 @@
 using namespace cuw3;
 
 namespace {
+    inline constexpr uint64 cuw3_try_reclaim_each_op = 8;
+    inline constexpr uint64 cuw3_try_cleanup_each_op = 16;
+
     RegionChunkAllocatorSpecsConfig cuw3_create_rca_alloc_specs_config() {
         RegionChunkAllocatorSpecsConfig config{};
         config.region_sizes = conf_region_sizes_log2;
@@ -26,7 +29,7 @@ namespace {
     AllocatorConfig cuw3_create_allocator_config() {
         AllocatorConfig config{};
         config.rca_specs_config = cuw3_create_rca_alloc_specs_config();
-        config.contention_split = 1; //conf_max_contention_split;
+        config.contention_split = conf_max_contention_split;
         config.num_grave_entries = conf_graveyard_slot_count;
         return config;
     }
@@ -124,10 +127,13 @@ namespace {
     struct ThreadLocalAllocatorGuard {
         ~ThreadLocalAllocatorGuard() {
             auto* alloc = cuw3_get_allocator();
-            CUW3_CHECK(alloc, "allocator was nullptr");
+            CUW3_CHECK_CRITICAL(alloc, "allocator was nullptr");
             if (tla) {
-                alloc->reclaim(tla);
-                alloc->retire_dead_tla(tla);
+                if (alloc->reclaim(tla)) {
+                    cuw3_destroy_tla(tla);
+                } else {
+                    alloc->retire_dead_tla(tla);
+                }
             }
             tla = nullptr;
         }
@@ -171,8 +177,10 @@ extern "C" {
         alloc->deallocate(tla, ptr, size);
 
         tla->extended_free_counter--;
-        if (tla->extended_free_counter % 8 == 0) {
+        if (tla->extended_free_counter % cuw3_try_reclaim_each_op == 0) {
             alloc->reclaim(tla);
+        }
+        if (tla->extended_free_counter % cuw3_try_cleanup_each_op == 0) {
             if (auto* released = alloc->do_tla_cleanup(tla)) {
                 cuw3_destroy_tla(released);
             }

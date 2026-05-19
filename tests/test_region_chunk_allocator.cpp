@@ -233,9 +233,6 @@ struct TestRegionChunkAllocatorCache {
     T data[conf_num_regions] = {};
 };
 
-// TODO : test all alloc
-// TODO : test allocated amount sums up
-// TODO : test all dealloc
 void test_region_allocator_st(uint rounds) {
     TestRegionChunkAllocator allocator{};
 

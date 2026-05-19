@@ -25,7 +25,6 @@ namespace atomic_stack_tests {
 
     void check_stack_allocations(const std::vector<StackLinkType>& allocations, const Stack& stack) {
         CUW3_CHECK(allocations.size() == stack.limit, "invalid count of allocations");
-        // TODO : redundant check
         for (uint i = 1; i < allocations.size(); i++) {
             CUW3_CHECK(allocations[i - 1] < allocations[i], "invalid order of allocated links.");
         }

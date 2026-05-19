@@ -6,8 +6,6 @@
 #include "assert.hpp"
 
 namespace cuw3 {
-    // TODO : create default node ops where possible
-    
     // This right here is ... somewhat viable implementation that will probably be used.
     // Somewhat because in theory version counter may overflow to the value some other modifying thread has previously read so program execution becomes undefined.
     // This should never happen in practice... Should not, at least.
@@ -22,7 +20,7 @@ namespace cuw3 {
     // This will help to mitigate ABA problem at some extent. To make it even more robust you can increase number of version bits. But still, no 100% guarantee. 
     // 
     // We must remember that some entry that we exclusively popped from th elist must be exclusively pushed into it.
-    // This is pretty obvious but must be stated explicitely: only one thread thread can push an entry back to the list.
+    // This is pretty obvious but must be stated explicitely: only one thread can push an entry back to the list.
     //
     // We can also implement version with count hint at a cost of smaller bit-width of the version field.
 
@@ -73,7 +71,7 @@ namespace cuw3 {
         static constexpr LinkType null_link = Traits::null_link;
         static constexpr LinkType op_failed = Traits::op_failed;
 
-        // TODO : maybe I should put an assertion or check to test node value?
+        // THINK : maybe I should put an assertion or check to test node value?
         template<class Backoff, class NodeOps>
         bool push(int attempts, LinkType node, Backoff&& backoff, NodeOps&& node_ops) {
             auto head_ref = std::atomic_ref{*head};
@@ -286,7 +284,7 @@ namespace cuw3 {
             node_ops.set_skip(list_head, list_tail); // short-circuit
             for (int attempt = attempts; attempt != 0; attempt -= attempt > 0) {
                 node_ops.set_next(list_tail, head_old);
-                if (head_ref.compare_exchange_strong(head_old, list_head, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+                if (head_ref.compare_exchange_strong(head_old, list_head, std::memory_order_acq_rel)) {
                     return true;
                 }
                 backoff();

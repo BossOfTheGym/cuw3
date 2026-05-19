@@ -440,7 +440,7 @@ namespace fast_arena_allocator_tests {
             if (arena_data_ptr_uintptr > arena_memory_uintptr) {
                 return false;
             }
-            auto arena_data_id = (arena_memory_uintptr - arena_data_ptr_uintptr) / arena_size; // idiv ... fuck it
+            auto arena_data_id = (arena_memory_uintptr - arena_data_ptr_uintptr) / arena_size; // idiv ...
             if (arena_data_id >= num_arenas) {
                 return false;
             }

@@ -95,6 +95,8 @@ namespace cuw3 {
         uint32 handle{}; // global index of the handle
     };
 
+    inline constexpr RegionChunkLocation null_region_chunk_location = {region_chunk_allocator_null_value};
+
     // NOTE : this is, I think, the most simple version of what can be done
     // Of course, this implementation can be made more adaptable to real-world circumstances
     // Instead of preallocated range of reserved virtual memory we can have several slots (pointers)  
@@ -401,7 +403,7 @@ namespace cuw3 {
         uint split_step = 1;
     };
 
-    // TODO : must include chunk size
+    // NOTE : it would be more convenient if this structure stored chunk_size with it
     struct RegionChunkAllocation {
         explicit operator bool() const {
             return valid();
@@ -425,7 +427,10 @@ namespace cuw3 {
         uint32 split{};
     };
 
-    // TODO : reconsider naming
+    inline constexpr RegionChunkAllocation null_region_chunk_allocation = {region_chunk_allocator_null_value};
+    inline constexpr RegionChunkAllocation failed_region_chunk_allocation = {region_chunk_allocator_failed_value};
+
+    // NOTE : can be named better, does not properly reflect that is contains both chunk memory + its handle
     struct RegionChunkMemory {
         explicit operator bool() const {
             return valid();
@@ -586,7 +591,6 @@ namespace cuw3 {
             return specs->get_handle(handles, handle_id);
         }
 
-        // TODO : rename & reconsider input parameters
         [[nodiscard]] RegionChunkMemory region_data_to_memory_no_check(uint32 region, uint32 chunk, uint32 handle) {
             auto& region_specs = specs->region_specs[region];
             void* chunk_mem = region_specs.get_chunk(regions, chunk);
@@ -594,7 +598,6 @@ namespace cuw3 {
             return {chunk_mem, handle_mem};
         }
 
-        // TODO : rename & reconsider input parameters
         [[nodiscard]] RegionChunkMemory region_data_to_memory(uint32 region, uint32 chunk, uint32 handle) {
             CUW3_CHECK_RETURN_VAL(region < specs->num_regions, {}, "invalid region");
             CUW3_CHECK_RETURN_VAL(handle < specs->num_handles, {}, "invalid handle");
@@ -613,7 +616,7 @@ namespace cuw3 {
 
         [[nodiscard]] RegionChunkLocation ptr_to_location(void* ptr) {
             if (!belongs_any_region(ptr)) {
-                return {};
+                return {region_chunk_allocator_null_value};
             }
             return specs->locate_chunk(subptr(ptr, regions));
         }

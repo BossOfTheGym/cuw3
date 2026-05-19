@@ -8,12 +8,8 @@
 #include "cuw3/config.hpp" // generated
 #include "cuw3/typedefs.hpp"
 
-// TODO : platform defines
-// TODO : build configuration defines
-// TODO : conditional defines
 
-// macros are unchecked, all checks are done within conf.hpp
-
+// macros definitions are unchecked, all checks are done within conf.hpp
 #define CUW3_CACHELINE_SIZE 64
 #define CUW3_CONTROL_BLOCK_SIZE 128
 

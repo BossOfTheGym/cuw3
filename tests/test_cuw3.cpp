@@ -37,21 +37,21 @@ uint64 estimated_allocation_size() {
 
 void test_cuw3_st() {
     std::vector<Alloc> allocs{};
-    // for (uint64 alloc_size = 32; alloc_size <= (1 << 16); alloc_size += 32) {
-    //     if (void* ptr = cuw3_alloc(alloc_size, 32)) {
-    //         allocs.push_back({ptr, alloc_size});
-    //     } else {
-    //         MAKE_AN_ABORTION("failed to make an allocation");
-    //     }
-    // }
-    // for (uint64 alloc_size = 1 << 16; alloc_size <= (1 << 20); alloc_size += 1 << 15) {
-    //     if (void* ptr = cuw3_alloc(alloc_size, 32)) {
-    //         allocs.push_back({ptr, alloc_size});
-    //     } else {
-    //         MAKE_AN_ABORTION("failed to make an allocation");
-    //     }
-    // }
-    for (uint64 alloc_size = 1 << 20; alloc_size <= (1 << 20); alloc_size += 1 << 20) {
+    for (uint64 alloc_size = 32; alloc_size <= (1 << 16); alloc_size += 32) {
+        if (void* ptr = cuw3_alloc(alloc_size, 32)) {
+            allocs.push_back({ptr, alloc_size});
+        } else {
+            MAKE_AN_ABORTION("failed to make an allocation");
+        }
+    }
+    for (uint64 alloc_size = 1 << 16; alloc_size <= (1 << 20); alloc_size += 1 << 15) {
+        if (void* ptr = cuw3_alloc(alloc_size, 32)) {
+            allocs.push_back({ptr, alloc_size});
+        } else {
+            MAKE_AN_ABORTION("failed to make an allocation");
+        }
+    }
+    for (uint64 alloc_size = 1 << 20; alloc_size <= (1 << 21); alloc_size += 1 << 20) {
         if (void* ptr = cuw3_alloc(alloc_size, 32)) {
             allocs.push_back({ptr, alloc_size});
         } else {
@@ -66,21 +66,21 @@ void test_cuw3_st() {
 
 void test_cuw3_st_mini() {
     std::vector<Alloc> allocs{};
-    // for (uint64 alloc_size = 32; alloc_size <= 1024; alloc_size += 32) {
-    //     if (void* ptr = cuw3_alloc(alloc_size, 32)) {
-    //         allocs.push_back({ptr, alloc_size});
-    //     } else {
-    //         MAKE_AN_ABORTION("failed to make an allocation");
-    //     }
-    // }
-    // for (uint64 alloc_size = 1 << 16; alloc_size <= (1 << 18); alloc_size += 1 << 15) {
-    //     if (void* ptr = cuw3_alloc(alloc_size, 32)) {
-    //         allocs.push_back({ptr, alloc_size});
-    //     } else {
-    //         MAKE_AN_ABORTION("failed to make an allocation");
-    //     }
-    // }
-    for (uint64 alloc_size = 1 << 20; alloc_size <= (1 << 20); alloc_size += 1 << 20) {
+    for (uint64 alloc_size = 32; alloc_size <= 1024; alloc_size += 32) {
+        if (void* ptr = cuw3_alloc(alloc_size, 32)) {
+            allocs.push_back({ptr, alloc_size});
+        } else {
+            MAKE_AN_ABORTION("failed to make an allocation");
+        }
+    }
+    for (uint64 alloc_size = 1 << 16; alloc_size <= (1 << 18); alloc_size += 1 << 15) {
+        if (void* ptr = cuw3_alloc(alloc_size, 32)) {
+            allocs.push_back({ptr, alloc_size});
+        } else {
+            MAKE_AN_ABORTION("failed to make an allocation");
+        }
+    }
+    for (uint64 alloc_size = 1 << 20; alloc_size <= (1 << 21); alloc_size += 1 << 20) {
         if (void* ptr = cuw3_alloc(alloc_size, 32)) {
             allocs.push_back({ptr, alloc_size});
         } else {
@@ -301,17 +301,17 @@ void test_allocation_chaos(uint st, uint spam, uint cross) {
 int main() {
     std::cout << "estimated alloc size per thread(x4): " << estimated_allocation_size() * 4 << std::endl;
 
-    // std::cout << "test_cuw3_st" << std::endl;
-    // for (int i = 0; i < 100000; i++) {
-    //     test_cuw3_st();
-    // }
-    // std::cout << "test_cuw3_st_mini" << std::endl;
-    // for (int i = 0; i < 100000; i++) {
-    //     test_cuw3_st_mini();
-    // }
-    std::cout << "test_cuw3_mt_spam" << std::endl;
+    std::cout << "test_cuw3_st" << std::endl;
     for (int i = 0; i < 1000; i++) {
-        test_cuw3_mt_spam(128, 2, 10000);
+        test_cuw3_st();
+    }
+    std::cout << "test_cuw3_st_mini" << std::endl;
+    for (int i = 0; i < 1000; i++) {
+        test_cuw3_st_mini();
+    }
+    std::cout << "test_cuw3_mt_spam" << std::endl;
+    for (int i = 0; i < 10; i++) {
+        test_cuw3_mt_spam(128, 8, 64);
     }
     std::cout << "test_cuw3_mt_cross" << std::endl;
     for (int i = 0; i < 16; i++) {
@@ -324,8 +324,8 @@ int main() {
     test_allocation_chaos(0, 2, 0);
     std::cout << "test_allocation_chaos(0,0,2)" << std::endl;
     test_allocation_chaos(0, 0, 2);
-    std::cout << "test_allocation_chaos(0,0,2)" << std::endl;
-    test_allocation_chaos(2, 2, 2);
+    std::cout << "test_allocation_chaos(4,4,4)" << std::endl;
+    test_allocation_chaos(4, 4, 4);
 
     return 0;
 }

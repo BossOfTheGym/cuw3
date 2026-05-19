@@ -18,7 +18,7 @@ namespace cuw3 {
     using ThreadGraveyardEntry = DefaultThreadGraveyardEntry;
     using ThreadGraveyardOps = DefaultThreadGraveyardOps;
 
-    // TODO : this little buddy gets little bit fused with allocator.hpp itself
+    // NOTEs : this little buddy gets little bit fused with allocator.hpp itself
     // * probably it is a good idea just to move it into the allocator.hpp next to the main allocator data structure 
     // thread local allocator: core structure that holds context of all allocator types 
     // this type is not relocatable: its address must remain constant during lifetime
@@ -53,13 +53,11 @@ namespace cuw3 {
         FastArenaStepSplitAllocator step_split_allocator{};
         FastArenaSmallAllocator small_allocator{};
 
-        // TODO : do something with it later
-        // TODO : this must be moved into the aux thread context
+        // NOTE : see allocator.hpp for details. do something with it later.
+        // this better be moved into the aux thread context
         // all this fields are in cuw3.cpp
         // kind of a workaround that will rest here for now
-        // not that much of a workaround... well, not that much...
-        // just a little workaround, Stan
-        uint64 thread_id{}; // for debug purposes only
+        uint64 thread_id{}; // for debug purposes mostly
         uint64 total_chunk_storage_size{};
         uint64 last_chunk_pool_split_id[conf_max_region_sizes] = {};
         uint64 last_graveyard_id{};

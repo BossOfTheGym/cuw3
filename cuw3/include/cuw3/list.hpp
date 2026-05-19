@@ -172,7 +172,7 @@ namespace cuw3 {
         DefaultListEntry* next{};
     };
 
-    // TODO : const correctness for get_next and get_prev? seems like it must never use const
+    // THINK : const correctness for get_next and get_prev? seems like it must never use const
     template<class Node>
     struct DefaultListOps {
         Node* get_prev(Node* node) {
