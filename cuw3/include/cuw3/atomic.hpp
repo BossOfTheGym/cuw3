@@ -207,9 +207,10 @@ namespace cuw3 {
         };
 
         tail invariants
-        node->next == nullptr if it is tail of the list
-        node->skip serves as a hint to the tail
-        if node->next == nullptr then node->skip == node
+        * node->next == nullptr if it is tail of the list
+        * node->skip serves as a hint to the tail
+        * if node->next == nullptr then node->skip == node
+        * node->skip must always point to valid node!!!
 
         def get_skip(node):
             if node->next != nullptr

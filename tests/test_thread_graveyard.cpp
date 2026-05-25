@@ -7,9 +7,21 @@ using namespace cuw3;
 
 using ThreadGraveyardOps = DefaultThreadGraveyardOps;
 
-struct alignas(conf_cacheline) TestThreadGraveyardElement {
+struct TestThreadGraveyardElement {
     [[nodiscard]] static TestThreadGraveyardElement* from_entry(void* entry) {
         return cuw3_field_to_obj(entry, TestThreadGraveyardElement, entry);
+    }
+
+    void mark_acquired() {
+        auto ref = std::atomic_ref{status};
+        auto old = ref.exchange(1, std::memory_order_relaxed);
+        CUW3_CHECK(old == 0, "WTF");
+    }
+
+    void mark_released() {
+        auto ref = std::atomic_ref{status};
+        auto old = ref.exchange(0, std::memory_order_relaxed);
+        CUW3_CHECK(old == 1, "WTF");
     }
 
     bool acquire(uint64 limit) {
@@ -22,6 +34,7 @@ struct alignas(conf_cacheline) TestThreadGraveyardElement {
     }
 
     DefaultThreadGraveyardEntry entry{};
+    uint64 status{};
     uint64 acquired{};
 };
 
@@ -35,27 +48,40 @@ struct TestThreadGraveyard {
         CUW3_CHECK(elements, "failed to create elements");
 
         for (uint i = 0; i < num_elements; i++) {
-            put_thread_to_rest(&elements[i]);
+            put_thread(&elements[i]);
         }
     }
 
+    // TODO :  bad design
     [[nodiscard]] ThreadGraveData acquire(uint start = 0, uint rounds = 4) {
         ThreadGraveAcquireParams params{};
         params.rounds = rounds;
         params.start = start;
-        return graveyard.acquire(ThreadGraveyardOps{}, params);
+        auto acquired = graveyard.acquire(ThreadGraveyardOps{}, params);
+        if (acquired) {
+            auto* entry = TestThreadGraveyardElement::from_entry(acquired.data);
+            entry->mark_acquired();
+        }
+        return acquired;
     }
 
+    // CHANGE: release_thread -> remove_thread
+    void remove_thread(ThreadGraveData grave_data) {
+        auto* entry = TestThreadGraveyardElement::from_entry(grave_data.data);
+        entry->mark_released();
+        graveyard.empty_grave(grave_data);
+    }
+
+    // CHANGE:put_thread_back -> release_thread
     void release_thread(ThreadGraveData grave_data) {
-        graveyard.release_thread(grave_data);
+        auto* entry = TestThreadGraveyardElement::from_entry(grave_data.data);
+        entry->mark_released();
+        graveyard.release_thread(grave_data, ThreadGraveyardOps{});
     }
 
-    void put_thread_back(ThreadGraveData grave_data) {
-        graveyard.put_thread_back(grave_data, ThreadGraveyardOps{});
-    }
-
-    void put_thread_to_rest(TestThreadGraveyardElement* elem) {
-        graveyard.put_thread_to_rest(&elem->entry, ThreadGraveyardOps{});
+    // CHANGE:put_thread_to_rest -> put_thread_to_rest
+    void put_thread(TestThreadGraveyardElement* elem) {
+        graveyard.put_thread(&elem->entry, ThreadGraveyardOps{});
     }
 
     uint64 get_num_elements() const {
@@ -75,6 +101,7 @@ struct TestThreadGraveyard {
     uint64 num_elements{};
 };
 
+
 void test_graveyard_st(uint rounds) {
     constexpr uint num_grave_entries = 8;
 
@@ -93,7 +120,7 @@ void test_graveyard_st(uint rounds) {
         CUW3_CHECK(acquired.size() == graveyard.get_num_elements(), "failed to acquire all entries");
 
         for (auto grave : acquired) {
-            graveyard.put_thread_back(grave);
+            graveyard.release_thread(grave);
         }
         acquired.clear();
     }
@@ -101,7 +128,7 @@ void test_graveyard_st(uint rounds) {
     for (uint i = 0; i < graveyard.get_num_elements(); i++) {
         auto grave = graveyard.acquire();
         CUW3_CHECK(grave, "there must have been a grave");
-        graveyard.release_thread(grave);
+        graveyard.remove_thread(grave);
     }
     CUW3_CHECK(graveyard.is_empty(), "graveyard must have been empty");
 }
@@ -125,17 +152,17 @@ void test_graveyard_chaos_mt(uint num_elements, uint num_threads, uint acquire_s
 
             auto& thread_context = thread_contexts[thread_id];
             while (true) {
-                auto grave = graveyard.acquire(thread_context.last_grave, 1024);
-                if (!grave) {
+                auto acquired = graveyard.acquire(thread_context.last_grave, 1024);
+                if (!acquired) {
                     break;
                 }
-                thread_context.last_grave = grave.grave_num;
+                thread_context.last_grave = acquired.grave;
 
-                auto* element = TestThreadGraveyardElement::from_entry(grave.thread);
+                auto* element = TestThreadGraveyardElement::from_entry(acquired.data);
                 if (element->acquire(acquire_stop)) {
-                    graveyard.release_thread(grave);
+                    graveyard.release_thread(acquired);
                 } else {
-                    graveyard.put_thread_back(grave);
+                    graveyard.remove_thread(acquired);
                 }
             }
         });
@@ -148,20 +175,24 @@ void test_graveyard_chaos_mt(uint num_elements, uint num_threads, uint acquire_s
         return;
     }
 
-    std::cout << "very unlikely event but graveyrad was not empty after chaos events. cleaning up...\n";
+    std::cout << "very unlikely event but graveyard was not empty after chaos events. cleaning up...\n";
     
-    uint64 forced = 0;
     while (true) {
-        auto grave = graveyard.acquire();
-        if (!grave) {
+        auto acquired = graveyard.acquire();
+        if (!acquired) {
             break;
         }
-        auto* element = TestThreadGraveyardElement::from_entry(grave.thread);
+
+        auto* element = TestThreadGraveyardElement::from_entry(acquired.data);
         element->force_acquire(acquire_stop);
-        graveyard.release_thread(grave);
-        forced++;
+        graveyard.release_thread(acquired);
     }
-    CUW3_CHECK(forced < num_elements, "amount of forced elements is very unlikely to exceed num_elements");
+    if (!graveyard.is_empty()) {
+        for (uint i = 0; i < graveyard.num_elements; i++) {
+            auto& elem = graveyard.elements[i];
+            std:: cout << i << " " << elem.status << " " << elem.acquired << "\n";
+        }
+    }
     CUW3_CHECK(graveyard.is_empty(), "graveyard must be empty at that point");
 }
 

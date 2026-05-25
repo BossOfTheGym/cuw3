@@ -5,7 +5,10 @@ set(CUW3_LIB_HEADERS
     include/cuw3/cuw3.hpp
     include/cuw3/defs.hpp
     include/cuw3/export.hpp
-    include/cuw3/fast_arena_allocator.hpp
+    include/cuw3/fast_arena.hpp
+    include/cuw3/fast_arena_small_allocator.hpp
+    include/cuw3/fast_arena_step_split_allocator.hpp
+    include/cuw3/fast_arena.hpp
     include/cuw3/funcs.hpp
     include/cuw3/list.hpp
     include/cuw3/ptr.hpp
@@ -33,6 +36,11 @@ endif()
 configure_file(config.hpp.in include/cuw3/config.hpp @ONLY)
 
 add_library(cuw3 ${CUW3_LIB_TYPE} ${CUW3_LIB_SOURCES} ${CUW3_LIB_HEADERS} ${CMAKE_CURRENT_BINARY_DIR}/include/cuw3/config.hpp)
+
+# TODO : this is strange review it 
+if(NOT MSVC)                                                                                                                                                                                      
+    target_link_libraries(cuw3 PUBLIC atomic)                                                                                                                                                     
+endif()
 
 target_include_directories(cuw3
     PUBLIC

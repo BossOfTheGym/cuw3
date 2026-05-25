@@ -3,7 +3,9 @@
 #include "cuw3/region_chunk_handle.hpp"
 #include "cuw3/vmem.hpp"
 #include "cuw3/funcs.hpp"
-#include "cuw3/fast_arena_allocator.hpp"
+#include "cuw3/fast_arena.hpp"
+#include "cuw3/fast_arena_small_allocator.hpp"
+#include "cuw3/fast_arena_step_split_allocator.hpp"
 
 #include "tests_common.hpp"
 

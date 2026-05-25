@@ -3,11 +3,13 @@
 #include "conf.hpp"
 #include "list.hpp"
 #include "backoff.hpp"
+#include "fast_arena.hpp"
 #include "cuw3/atomic.hpp"
 #include "retire_reclaim.hpp"
+#include "thread_graveyard.hpp"
 #include "region_chunk_handle.hpp"
-#include "fast_arena_allocator.hpp"
-#include "cuw3/thread_graveyard.hpp"
+#include "fast_arena_small_allocator.hpp"
+#include "fast_arena_step_split_allocator.hpp"
 
 namespace cuw3 {
     struct ThreadLocalAllocatorConfig {

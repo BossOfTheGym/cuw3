@@ -4,7 +4,6 @@
 
 #include "cuw3/vmem.hpp"
 #include "cuw3/allocator.hpp"
-#include "cuw3/fast_arena_allocator.hpp"
 #include "cuw3/region_chunk_allocator.hpp"
 #include "cuw3/thread_local_allocator.hpp"
 
@@ -111,10 +110,9 @@ namespace {
         if (!alloc) {
             return nullptr;
         }
-        auto grave = alloc->acquire_dead_tla();
-        if (grave) {
-            alloc->release_dead_tla(grave);
-            return (cuw3::ThreadLocalAllocator*)grave.thread;
+        auto* tla = alloc->snatch_dead_tla();
+        if (tla) {
+            return tla;
         }
         return cuw3_create_new_tla();
     }

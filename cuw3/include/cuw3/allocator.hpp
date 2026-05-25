@@ -396,48 +396,56 @@ namespace cuw3 {
         // let it just hang in there until fully recycled
 
         // acquire random tla that has something to retire
-        [[nodiscard]] ThreadGraveData acquire_dead_tla(ThreadLocalAllocator* tla = nullptr) {
+        [[nodiscard]] ThreadGraveData _acquire_dead_tla(uint start = 0) {
             ThreadGraveAcquireParams params{};
             params.rounds = 1;
-            params.start = tla ? tla->last_graveyard_id : 0;
+            params.start = start;
             params.step = 1;
-            auto acquired = tla_graveyard.acquire(TlaGraveyardOps{}, params);
-            if (acquired && tla) {
-                tla->last_graveyard_id = acquired.grave_num;
-            }
-            return acquired;
+            return tla_graveyard.acquire(TlaGraveyardOps{}, params);
         }
 
         // all thread resources have been released, now we have to release the grave as well
-        void release_dead_tla(ThreadGraveData tla_grave) {
-            tla_graveyard.release_thread(tla_grave);
+        void _remove_dead_tla(ThreadGraveData tla_grave) {
+            tla_graveyard.empty_grave(tla_grave);
         }
 
         // we reclaimed whatever we could now we have to put it back to graveyard
-        void put_back_dead_tla(ThreadGraveData tla_grave) {
-            tla_graveyard.put_thread_back(tla_grave, TlaGraveyardOps{});
+        void _release_dead_tla(ThreadGraveData tla_grave) {
+            tla_graveyard.release_thread(tla_grave, TlaGraveyardOps{});
+        }
+
+
+        [[nodiscard]] ThreadLocalAllocator* snatch_dead_tla(uint start = 0) {
+            auto grave = _acquire_dead_tla(start);
+            if (grave) {
+                _remove_dead_tla(grave);
+                return grave_entry_to_tla(grave.data);
+            }
+            return nullptr;
         }
 
         // thread dies, we have to put its allocator to rest
         void retire_dead_tla(ThreadLocalAllocator* tla) {
-            tla_graveyard.put_thread_to_rest(tla->graveyard_entry_ptr(), TlaGraveyardOps{});
+            tla_graveyard.put_thread(tla->graveyard_entry_ptr(), TlaGraveyardOps{});
         }
 
         // pick random tla & cleanup whatever memory was retired there
         // tla can be nullptr
         [[nodiscard]] ThreadLocalAllocator* do_tla_cleanup(ThreadLocalAllocator* tla = nullptr) {
-            auto grave = acquire_dead_tla(tla);
+            auto grave = _acquire_dead_tla();
             if (!grave) {
                 return nullptr;
             }
+            if (tla) {
+                tla->last_graveyard_id = grave.grave;
+            }
 
-            auto* grave_tla = grave_entry_to_tla(grave.thread);
-            reclaim(grave_tla);
-            if (grave_tla->empty()) {
-                release_dead_tla(grave);
+            auto* grave_tla = grave_entry_to_tla(grave.data);
+            if (reclaim(grave_tla)) {
+                _remove_dead_tla(grave);
                 return grave_tla;
             }
-            put_back_dead_tla(grave);
+            _release_dead_tla(grave);
             return nullptr;
         }
 
