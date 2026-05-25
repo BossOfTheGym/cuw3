@@ -8,6 +8,8 @@ option(CUW3_BUILD_SHARED "build as shared library" ON)
 option(CUW3_DISABLE_GENERAL_CHECKS "disable general checks and assertions" OFF)
 option(CUW3_DISABLE_CRITICAL_CHECKS "disable critical checks" OFF)
 
+option(CUW3_ENABLE_TSAN "Enable TSAN" OFF)
+
 set(CUW3_BUILD_CONFIG $<CONFIG>)
 
 set(CUW3_VERSION_MAJOR 0)
@@ -16,6 +18,11 @@ set(CUW3_VERSION ${CUW3_VERSION_MAJOR}.${CUW3_VERSION_MINOR})
 
 if (MSVC)
 	add_compile_options("/Zc:preprocessor") # __VA_OPT__ fix for MSVC
+endif()
+
+if (CUW3_ENABLE_TSAN AND NOT MSVC)
+    add_compile_options(-fsanitize=thread -g)
+    add_link_options(-fsanitize=thread)
 endif()
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL" CACHE STRING "")
