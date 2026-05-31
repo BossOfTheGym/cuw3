@@ -383,9 +383,9 @@ namespace fast_arena_allocator_tests {
     };
 
     struct TestFastArenaMemoryStorage {
-        TestFastArenaMemoryStorage(uint _num_arenas, uint _arena_size) {
-            num_arenas = _num_arenas;
-            arena_size = align(_arena_size, vmem_page_size());
+        TestFastArenaMemoryStorage(uint num_arenas_, uint arena_size_) {
+            num_arenas = num_arenas_;
+            arena_size = align(arena_size_, vmem_page_size());
 
             uint64 arena_data_size = num_arenas * arena_size;
             arena_data_ptr = VMemPtr::create(arena_data_size);
@@ -398,7 +398,7 @@ namespace fast_arena_allocator_tests {
             list_init(&free_arenas, FastArenaListOps{});
         }
         
-        [[nodiscard]] TestRawFastArenaData _get_arena_by_id(uint arena_id) {
+        [[nodiscard]] TestRawFastArenaData get_arena_by_id_(uint arena_id) {
             void* arena_handle = advance_arr(arena_handles_ptr.get(), sizeof(FastArena), arena_id);
             void* arena_data = advance_arr(arena_data_ptr.get(), arena_size, arena_id);
             return {arena_data, arena_handle};
@@ -468,7 +468,7 @@ namespace fast_arena_allocator_tests {
             if (unused_arena_top < num_arenas) {
                 uint arena_id = unused_arena_top++;
                 allocated++;
-                return _get_arena_by_id(arena_id);
+                return get_arena_by_id_(arena_id);
             }
             return {};
         }
@@ -586,7 +586,7 @@ namespace fast_arena_allocator_tests {
 
 
         bool is_allocator_empty() const {
-            return allocator._is_allocator_empty() && arena_storage.is_empty();
+            return allocator.is_allocator_empty_() && arena_storage.is_empty();
         }
 
 
@@ -627,7 +627,7 @@ namespace fast_arena_allocator_tests {
         }
 
         uint64 sample_allocation_upper_bound(uint64 alignment_id) const {
-            return allocator._sample_allocation_upper_bound(alignment_id);
+            return allocator.sample_allocation_upper_bound_(alignment_id);
         }
 
 

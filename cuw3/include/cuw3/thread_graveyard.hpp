@@ -167,7 +167,7 @@ namespace cuw3 {
         }
 
 
-        [[nodiscard]] ThreadGraveData _acquire(ThreadGraveAcquireParams params) {
+        [[nodiscard]] ThreadGraveData acquire_(ThreadGraveAcquireParams params) {
             ThreadGraveyardBackoff backoff{};
             for (uint round = 0; round < params.rounds; round++) {
                 for (
@@ -185,14 +185,14 @@ namespace cuw3 {
             return {};
         }
 
-        void _release(ThreadGraveData data) {
+        void release_(ThreadGraveData data) {
             CUW3_CHECK(data.grave != num_grave_entries, "invalid grave");
 
             auto grave_entry_view = ThreadGraveEntryView{&grave_entries[data.grave]};
             grave_entry_view.release();
         }
 
-        void _empty_grave(ThreadGraveData data) {
+        void empty_grave_(ThreadGraveData data) {
             CUW3_CHECK(data.grave != num_grave_entries, "invalid grave");
 
             auto grave_entry_view = ThreadGraveEntryView{&grave_entries[data.grave]};
@@ -200,7 +200,7 @@ namespace cuw3 {
         }
 
         template<class NodeOps>
-        [[nodiscard]] void* _distribute(NodeOps&& node_ops, void* head, uint rounds) {
+        [[nodiscard]] void* distribute_(NodeOps&& node_ops, void* head, uint rounds) {
             void* curr = head;
             for (uint round = 0; curr && round < rounds; round++) {
                 uint distributed = 0;
@@ -220,7 +220,7 @@ namespace cuw3 {
         }
 
         template<class NodeOps>
-        [[nodiscard]] ThreadGraveData _acquire_distribute(NodeOps&& node_ops) {
+        [[nodiscard]] ThreadGraveData acquire_distribute_(NodeOps&& node_ops) {
             ThreadGraveDeadQueue grave_list{&dead_queue};
             
             void* snatched = grave_list.snatch();
@@ -229,13 +229,13 @@ namespace cuw3 {
             }
             
             void* distributed = node_ops.get_next(snatched);
-            void* remaining = _distribute(node_ops, distributed, 2);
+            void* remaining = distribute_(node_ops, distributed, 2);
             grave_list.push(remaining, ThreadGraveyardBackoff{}, node_ops);
 
             return {snatched, num_grave_entries};
         }
 
-        bool _put_thread(void* thread, ThreadGraveAcquireParams params) {
+        bool put_thread_(void* thread, ThreadGraveAcquireParams params) {
             for (uint round = 0; round < params.rounds; round++) {
                 for (
                     uint slot = (params.start + params.step) & (num_grave_entries - 1), i = 0;
@@ -252,7 +252,7 @@ namespace cuw3 {
         }
 
         template<class NodeOps>
-        void _enqueue_thread(void* thread, NodeOps&& node_ops) {
+        void enqueue_thread_(void* thread, NodeOps&& node_ops) {
             auto dead_queue_view = ThreadGraveDeadQueue{&dead_queue};
             node_ops.reset_next(thread);
             node_ops.reset_skip(thread);
@@ -264,10 +264,10 @@ namespace cuw3 {
         // acquire retired thread
         template<class NodeOps>
         [[nodiscard]] ThreadGraveData acquire(NodeOps&& node_ops, ThreadGraveAcquireParams params) {
-            if (auto acquired = _acquire(params)) {
+            if (auto acquired = acquire_(params)) {
                 return acquired;
             }
-            return _acquire_distribute(node_ops);
+            return acquire_distribute_(node_ops);
         }
 
         // thread is no longer needed here
@@ -275,7 +275,7 @@ namespace cuw3 {
             CUW3_CHECK(grave_data.grave <= num_grave_entries, "invalid grave num");
 
             if (grave_data.grave < num_grave_entries) {
-                _empty_grave(grave_data);
+                empty_grave_(grave_data);
             }
         }
 
@@ -285,7 +285,7 @@ namespace cuw3 {
             CUW3_CHECK(grave_data.grave <= num_grave_entries, "invalid grave num provided");
 
             if (grave_data.grave < num_grave_entries) {
-                _release(grave_data);
+                release_(grave_data);
             }
             if (grave_data.grave == num_grave_entries) {
                 put_thread(grave_data.data, node_ops);
@@ -295,10 +295,10 @@ namespace cuw3 {
         // thread is dead, was never dead before, so we want to put it into the grave
         template<class NodeOps>
         void put_thread(void* thread, NodeOps&& node_ops) {
-            if (_put_thread(thread, {})) {
+            if (put_thread_(thread, {})) {
                 return;
             }
-            _enqueue_thread(thread, node_ops);
+            enqueue_thread_(thread, node_ops);
         }
 
             // for testing purposes only

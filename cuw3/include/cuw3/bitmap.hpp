@@ -7,46 +7,46 @@
 #include "typedefs.hpp"
 
 namespace cuw3 {
-    template<UnsignedInteger T, gsize _bit_capacity>
+    template<UnsignedInteger T, gsize bit_capacity_>
     struct Bitmap {
-        static constexpr T bit_capacity = _bit_capacity;
+        static constexpr T bit_capacity = bit_capacity_;
         static constexpr T bin_size = bitsize<T>();
         static constexpr T bin_capacity = (bit_capacity + bitsize<T>() - 1) / bitsize<T>();
         static constexpr T null_bit = bit_capacity;
 
-        gsize _set_first_unset_bin(T bin, T mask) {
+        gsize set_first_unset_bin_(T bin, T mask) {
             gsize rel = std::countr_one(bins[bin] | mask);
             gsize bit = bin * bin_size + rel;
             bins[bin] = bitmask_set(bins[bin], rel);
             return bit;
         }
 
-        gsize _set_first_unset_bin_range(T first_bit, T last_bit) {
+        gsize set_first_unset_bin_range_(T first_bit, T last_bit) {
             if (first_bit >= last_bit) {
                 return null_bit;
             }
             gsize bin = first_bit / bin_size;
             gsize mask = bitmask_inv(first_bit % bin_size, last_bit % bin_size);
             if (!bitmask_all_set(bins[bin] | mask)) {
-                return _set_first_unset_bin(bin, mask);
+                return set_first_unset_bin_(bin, mask);
             }
             return null_bit;
         }
 
-        gsize _get_first_set_bin(T bin, T mask) const {
+        gsize get_first_set_bin_(T bin, T mask) const {
             gsize rel = std::countr_zero(bins[bin] & mask);
             gsize bit = bin * bin_size + rel;
             return bit;
         }
 
-        gsize _get_first_set_bin_range(T first_bit, T last_bit) const {
+        gsize get_first_set_bin_range_(T first_bit, T last_bit) const {
             if (first_bit >= last_bit) {
                 return null_bit;
             }
             gsize bin = first_bit / bin_size;
             gsize mask = bitmask(first_bit % bin_size, last_bit % bin_size);
             if (bitmask_any_set(bins[bin] & mask)) {
-                return _get_first_set_bin(bin, mask);
+                return get_first_set_bin_(bin, mask);
             }
             return null_bit;
         }
@@ -57,7 +57,7 @@ namespace cuw3 {
 
             gsize head_first_bit = start;
             gsize head_last_bit = std::min(align(start, bin_size), bit_capacity);
-            gsize head_bit = _set_first_unset_bin_range(head_first_bit, head_last_bit);
+            gsize head_bit = set_first_unset_bin_range_(head_first_bit, head_last_bit);
             if (head_bit != null_bit) {
                 return head_bit;
             }
@@ -70,7 +70,7 @@ namespace cuw3 {
             while (first_bit < last_bit) {
                 gsize bin = first_bit / bin_size;
                 if (!bitmask_all_set(bins[bin])) {
-                    return _set_first_unset_bin(bin, 0);
+                    return set_first_unset_bin_(bin, 0);
                 }
                 first_bit += bin_size;
             }
@@ -80,7 +80,7 @@ namespace cuw3 {
 
             gsize tail_first_bit = last_bit;
             gsize tail_last_bit = bit_capacity;
-            gsize tail_bit = _set_first_unset_bin_range(tail_first_bit, tail_last_bit);
+            gsize tail_bit = set_first_unset_bin_range_(tail_first_bit, tail_last_bit);
             return tail_bit;
         }
 
@@ -89,7 +89,7 @@ namespace cuw3 {
 
             gsize head_first_bit = start;
             gsize head_last_bit = std::min(align(start, bin_size), bit_capacity);
-            gsize head_bit = _get_first_set_bin_range(head_first_bit, head_last_bit);
+            gsize head_bit = get_first_set_bin_range_(head_first_bit, head_last_bit);
             if (head_bit != null_bit) {
                 return head_bit;
             }
@@ -102,7 +102,7 @@ namespace cuw3 {
             while (first_bit < last_bit) {
                 gsize bin = first_bit / bin_size;
                 if (bitmask_any_set(bins[bin])) {
-                    return _get_first_set_bin(bin, bitmask_all<T>());
+                    return get_first_set_bin_(bin, bitmask_all<T>());
                 }
                 first_bit += bin_size;
             }
@@ -112,7 +112,7 @@ namespace cuw3 {
 
             gsize tail_first_bit = last_bit;
             gsize tail_last_bit = bit_capacity;
-            gsize tail_bit = _get_first_set_bin_range(tail_first_bit, tail_last_bit);
+            gsize tail_bit = get_first_set_bin_range_(tail_first_bit, tail_last_bit);
             return tail_bit;
         }
 

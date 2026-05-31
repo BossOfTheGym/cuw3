@@ -168,7 +168,7 @@ namespace cuw3 {
         }
 
 
-        [[nodiscard]] RegionChunkLocation _locate_chunk_common(uint64 relptr, uint32 region) const {
+        [[nodiscard]] RegionChunkLocation locate_chunk_common_(uint64 relptr, uint32 region) const {
             auto& specs = region_specs[region];
             CUW3_CHECK(specs.num_handles != 0, "we attempted to locate chunk within an empty region.");
 
@@ -178,20 +178,20 @@ namespace cuw3 {
             return {region, chunk, handle};
         }
 
-        [[nodiscard]] RegionChunkLocation _locate_chunk_all_regions_equal(uint64 relptr) const {
+        [[nodiscard]] RegionChunkLocation locate_chunk_all_regions_equal_(uint64 relptr) const {
             CUW3_CHECK(region_size != 0, "regions are not equal");
 
             uint32 region = divpow2(relptr, region_size_log2);
-            return _locate_chunk_common(relptr, region);
+            return locate_chunk_common_(relptr, region);
         }
 
-        [[nodiscard]] RegionChunkLocation _locate_chunk_all_regions_differ(uint64 relptr) const {
+        [[nodiscard]] RegionChunkLocation locate_chunk_all_regions_differ_(uint64 relptr) const {
             CUW3_ASSERT(region_size == 0, "all regions are equal: more effective algorithm available.");
 
             uint32 region = search_hosting_region(relptr);
             CUW3_CHECK(region != region_chunk_allocator_null_value, "unreachable reached: sentinel search exausted");
 
-            return _locate_chunk_common(relptr, region);
+            return locate_chunk_common_(relptr, region);
         }
 
 
@@ -215,9 +215,9 @@ namespace cuw3 {
 
         [[nodiscard]] RegionChunkLocation locate_chunk(uint64 relptr) const {
             if (region_size) {
-                return _locate_chunk_all_regions_equal(relptr);
+                return locate_chunk_all_regions_equal_(relptr);
             }
-            return _locate_chunk_all_regions_differ(relptr);
+            return locate_chunk_all_regions_differ_(relptr);
         }
 
         bool is_valid_handle(uint32 handle) const {
@@ -496,7 +496,7 @@ namespace cuw3 {
         }
 
 
-        uint32 _region_handle_to_chunk(uint32 region, uint32 handle) {
+        uint32 region_handle_to_chunk_(uint32 region, uint32 handle) {
             CUW3_ASSERT(region < specs->num_regions, "invalid region value");
             CUW3_ASSERT(handle < specs->num_handles, "invalid handle value");
 
@@ -507,8 +507,8 @@ namespace cuw3 {
             return handle - region_specs.handle_offset;
         }
 
-        RegionChunkMemory _region_handle_to_memory(uint32 region, uint32 handle) {
-            uint32 chunk = _region_handle_to_chunk(region, handle);
+        RegionChunkMemory region_handle_to_memory_(uint32 region, uint32 handle) {
+            uint32 chunk = region_handle_to_chunk_(region, handle);
 
             auto& region_specs = specs->region_specs[region];
             void* chunk_memory = region_specs.get_chunk(regions, chunk);
@@ -516,7 +516,7 @@ namespace cuw3 {
             return {chunk_memory, handle_memory};
         }
 
-        [[nodiscard]] RegionChunkAllocation _allocate_chunk(uint32 region, RegionChunkAllocParams alloc_params) {
+        [[nodiscard]] RegionChunkAllocation allocate_chunk_(uint32 region, RegionChunkAllocParams alloc_params) {
             CUW3_ASSERT(region < specs->num_regions, "invalid region value");
 
             bool chunk_seen = false;
@@ -527,7 +527,7 @@ namespace cuw3 {
             ) {
                 uint32 handle = pools->allocate_from_list(region, split, alloc_params.attempts, RegionAllocatorPoolHandleOps{this});
                 if (handle < specs->num_handles) {
-                    return {region, _region_handle_to_chunk(region, handle), handle, split};
+                    return {region, region_handle_to_chunk_(region, handle), handle, split};
                 }
                 if (handle == region_chunk_allocator_failed_value) {
                     chunk_seen = true;
@@ -537,7 +537,7 @@ namespace cuw3 {
                     handle = pools->allocate_from_stack(region, split);
                 }
                 if (handle < specs->num_handles) {
-                    return {region, _region_handle_to_chunk(region, handle), handle, split};
+                    return {region, region_handle_to_chunk_(region, handle), handle, split};
                 }
                 // no need to check op_failed for current stack implementation
             }
@@ -641,7 +641,7 @@ namespace cuw3 {
 
             RegionChunkAllocatorBackoff backoff{};
             for (int rounds = alloc_params.rounds; rounds != 0; ) {
-                auto allocation = _allocate_chunk(region, alloc_params);
+                auto allocation = allocate_chunk_(region, alloc_params);
                 if (allocation) {
                     CUW3_UNPOISON_MEMORY_REGION(handle_from_index(allocation.handle), specs->handle_size);
                     return allocation;

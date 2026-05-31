@@ -477,12 +477,12 @@ namespace cuw3 {
 
 
             // for testing purposes only
-            bool _has_any_available_arenas() const {
+            bool has_any_available_arenas_() const {
                 return cached_arena || present_arenas.any_set(min_step_split_id);
             }
 
             // for testing purposes only
-            [[nodiscard]] uint64 _sample_largest_bin() const {
+            [[nodiscard]] uint64 sample_largest_bin_() const {
                 return present_arenas.get_last_set_bit(min_step_split_id);
             }
 
@@ -527,14 +527,14 @@ namespace cuw3 {
 
 
         // can_allocate returned true
-        [[nodiscard]] AcquiredTypedResource<FastArena> _acquire_cached_arena(uint64 size_aligned, uint64 alignment_id) {
+        [[nodiscard]] AcquiredTypedResource<FastArena> acquire_cached_arena_(uint64 size_aligned, uint64 alignment_id) {
             CUW3_ASSERT(bins_info.check_alignment_id(alignment_id), "invalid alignment id");
             
             return step_split_entries[alignment_id].acquire_cached_arena(size_aligned);
         }
 
-        // _can_allocate => true
-        [[nodiscard]] AcquiredTypedResource<FastArena> _acquire_bin_arena(uint64 size_aligned, uint64 alignment_id) {
+        // can_allocate_ => true
+        [[nodiscard]] AcquiredTypedResource<FastArena> acquire_bin_arena_(uint64 size_aligned, uint64 alignment_id) {
             CUW3_ASSERT(bins_info.check_alignment_id(alignment_id), "invalid alignment id");
 
             auto step_split_id = bins_info.locate_step_split_size_clamped(alignment_id, size_aligned);
@@ -543,7 +543,7 @@ namespace cuw3 {
         }
 
         // returns pointer to the arena that is no longer used
-        [[nodiscard]] FastArena* _try_update_cached_arena(FastArena* arena, uint64 alignment_id) {
+        [[nodiscard]] FastArena* try_update_cached_arena_(FastArena* arena, uint64 alignment_id) {
             CUW3_ASSERT(bins_info.check_alignment_id(alignment_id), "invalid alignment id");
 
             auto& entry = step_split_entries[alignment_id];
@@ -551,7 +551,7 @@ namespace cuw3 {
         }
 
         // arena is not in any list
-        void _put_arena(FastArena* arena, uint64 alignment_id) {
+        void put_arena_(FastArena* arena, uint64 alignment_id) {
             CUW3_ASSERT(bins_info.check_alignment_id(alignment_id), "invalid alignment");
             
             auto arena_view = FastArenaView{arena};
@@ -562,20 +562,20 @@ namespace cuw3 {
             entry.put_arena(arena, step_split_id);
         }
 
-        void _release_arena(FastArena* arena, uint64 alignment_id) {
-            arena = _try_update_cached_arena(arena, alignment_id);
+        void release_arena_(FastArena* arena, uint64 alignment_id) {
+            arena = try_update_cached_arena_(arena, alignment_id);
             if (!arena) {
                 return;
             }
-            _put_arena(arena, alignment_id);
+            put_arena_(arena, alignment_id);
         }
 
-        [[nodiscard]] AcquiredTypedResource<FastArena> _acquire_arena(uint64 size_aligned, uint64 alignment_id) {
+        [[nodiscard]] AcquiredTypedResource<FastArena> acquire_arena_(uint64 size_aligned, uint64 alignment_id) {
             CUW3_ASSERT(bins_info.check_alignment_id(alignment_id), "invalid alignment");
 
             using enum AcquiredTypedResource<FastArena>::Status;
 
-            auto acquired = _acquire_cached_arena(size_aligned, alignment_id);
+            auto acquired = acquire_cached_arena_(size_aligned, alignment_id);
             switch (acquired.status) {
                 case Failed:
                 case Acquired:
@@ -586,7 +586,7 @@ namespace cuw3 {
                     CUW3_ABORT_CRITICAL("unreachable reached");
             }
             
-            acquired = _acquire_bin_arena(size_aligned, alignment_id);
+            acquired = acquire_bin_arena_(size_aligned, alignment_id);
             switch (acquired.status) {
                 case Failed:
                 case Acquired:
@@ -602,16 +602,16 @@ namespace cuw3 {
 
 
         // for testing purposes only
-        bool _has_any_available_arenas(uint64 alignment_id) const {
+        bool has_any_available_arenas_(uint64 alignment_id) const {
             CUW3_CHECK(bins_info.check_alignment_id(alignment_id), "invalid alignment id");
 
-            return step_split_entries[alignment_id]._has_any_available_arenas();
+            return step_split_entries[alignment_id].has_any_available_arenas_();
         }
 
         // for testing purposes only
-        bool _has_any_available_arenas() const {
+        bool has_any_available_arenas_() const {
             for (uint alignment_id = 0; alignment_id < bins_info.get_num_alignments(); alignment_id++) {
-                if (_has_any_available_arenas(alignment_id)) {
+                if (has_any_available_arenas_(alignment_id)) {
                     return true;
                 }
             }
@@ -619,7 +619,7 @@ namespace cuw3 {
         }
 
         // for testing purposes only
-        [[nodiscard]] uint64 _sample_allocation_upper_bound(uint64 alignment_id) const {
+        [[nodiscard]] uint64 sample_allocation_upper_bound_(uint64 alignment_id) const {
             CUW3_CHECK(bins_info.check_alignment_id(alignment_id), "invalid alignment id");
             
             auto& entry = step_split_entries[alignment_id];
@@ -629,7 +629,7 @@ namespace cuw3 {
                 upper_bound = FastArenaView{entry.cached_arena}.remaining();
             }
 
-            auto step_split_id = entry._sample_largest_bin();
+            auto step_split_id = entry.sample_largest_bin_();
             if (step_split_id != entry.null_step_split_id) {
                 upper_bound = std::max(upper_bound, bins_info.step_split_id_to_info(step_split_id).get_step_split_size());
             }
@@ -651,7 +651,7 @@ namespace cuw3 {
                 return AcquiredTypedResource<FastArena>::failed();
             }
 
-            auto acquired = _acquire_arena(size_aligned, alignment_id);
+            auto acquired = acquire_arena_(size_aligned, alignment_id);
             if (acquired.status_acquired()) {
                 CUW3_CHECK(total_arenas > 0, "invariant violation: total_arenas expected to be non-zero");
                 total_arenas--;
@@ -672,7 +672,7 @@ namespace cuw3 {
             CUW3_CHECK(bins_info.check_alignment_id(alignment_id), "invalid alignment");
             CUW3_CHECK(arena_view.memory_size() >= step_split_entries[alignment_id].min_alloc_size, "arena is too small");
 
-            _release_arena(arena, alignment_id);
+            release_arena_(arena, alignment_id);
             total_arenas++;
         }
 
@@ -740,13 +740,13 @@ namespace cuw3 {
 
 
         // for testing purposes only
-        [[nodiscard]] uint64 _sample_allocation_upper_bound(uint64 alignment_id) const {
-            return fast_arena_bins._sample_allocation_upper_bound(alignment_id);
+        [[nodiscard]] uint64 sample_allocation_upper_bound_(uint64 alignment_id) const {
+            return fast_arena_bins.sample_allocation_upper_bound_(alignment_id);
         }
 
         // for testing purposes only
-        bool _is_allocator_empty() const {
-            return !fast_arena_bins._has_any_available_arenas();
+        bool is_allocator_empty_() const {
+            return !fast_arena_bins.has_any_available_arenas_();
         }
 
 

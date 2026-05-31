@@ -18,34 +18,34 @@ namespace cuw3 {
 
         template<class T>
         bool fits() const {
-            return !empty() && _size >= sizeof(T) && is_aligned(_ptr, alignof(T));
+            return !empty() && size_ >= sizeof(T) && is_aligned(ptr_, alignof(T));
         }
 
         template<class T>
         bool fits(uint64 alignment) const {
-            return !empty() && _size >= sizeof(T) && is_aligned(_ptr, std::max(alignof(T), alignment));
+            return !empty() && size_ >= sizeof(T) && is_aligned(ptr_, std::max(alignof(T), alignment));
         }
 
         template<class T>
         bool fits(uint64 size, uint64 alignment) const {
-            return !empty() && _size >= std::max(sizeof(T), size) && is_aligned(_ptr, std::max(alignof(T), alignment));
+            return !empty() && size_ >= std::max(sizeof(T), size) && is_aligned(ptr_, std::max(alignof(T), alignment));
         }
 
         bool fits(uint64 size, uint64 alignment) const {
-            return !empty() && _size >= size && is_aligned(_ptr, alignment);
+            return !empty() && size_ >= size && is_aligned(ptr_, alignment);
         }
 
         bool empty() const {
-            return !_ptr;
+            return !ptr_;
         }
 
 
         void* get() const {
-            return _ptr;
+            return ptr_;
         }
 
         uintptr size() const {
-            return _size;
+            return size_;
         }
 
         explicit operator bool() const {
@@ -53,8 +53,8 @@ namespace cuw3 {
         }
 
 
-        void* _ptr{};
-        uintptr _size{};
+        void* ptr_{};
+        uintptr size_{};
     };
 
     struct AcquiredResource {

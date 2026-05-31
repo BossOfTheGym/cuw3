@@ -20,7 +20,7 @@ struct Alloc {
     uint64 size{};
 };
 
-#define MAKE_AN_ABORTION(msg) do { std::cerr << msg << std::endl; FAIL(); } while (0)
+#define MAKE_AN_ABORTION(msg) do { std::cerr << msg << "\n"; FAIL(); } while (0)
 
 uint64 estimated_allocation_size() {
     uint64 total_size{};

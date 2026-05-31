@@ -26,7 +26,7 @@ namespace cuw3 {
         void pack(T value, T alignment) {
             CUW3_ASSERT(!(value & ~value_mask), "bad value: garbage in alignment bits");
             CUW3_ASSERT(!(alignment & ~alignment_mask), "bad alignment: garbage in value bits");
-            _data = value | alignment;
+            data_ = value | alignment;
         }
 
         void pack_shifted(T value, T alignment) {
@@ -34,22 +34,22 @@ namespace cuw3 {
         }
 
         T value() const noexcept {
-            return _data & value_mask;
+            return data_ & value_mask;
         }
 
         T value_shifted() const noexcept {
-            return _data >> alignment_bits;
+            return data_ >> alignment_bits;
         }
 
         T alignment() const noexcept {
-            return _data & alignment_mask;
+            return data_ & alignment_mask;
         }
 
         T raw() const {
-            return _data;
+            return data_;
         }
 
-        T _data{};
+        T data_{};
     };
 
     template<IntptrLike T, T bits>

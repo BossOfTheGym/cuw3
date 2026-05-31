@@ -41,11 +41,11 @@ struct TestThreadGraveyardElement {
 };
 
 struct TestThreadGraveyard {
-    TestThreadGraveyard(uint64 _num_grave_entries, uint64 _num_elements) {
-        auto* graveyard_check = ThreadGraveyard::create(Memory::from(&graveyard), _num_grave_entries);
+    TestThreadGraveyard(uint64 num_grave_entries_, uint64 num_elements_) {
+        auto* graveyard_check = ThreadGraveyard::create(Memory::from(&graveyard), num_grave_entries_);
         CUW3_CHECK(graveyard_check, "failed to initialize graveyard");
 
-        num_elements = _num_elements;
+        num_elements = num_elements_;
         elements = std::make_unique<TestThreadGraveyardElement[]>(num_elements);
         CUW3_CHECK(elements, "failed to create elements");
 

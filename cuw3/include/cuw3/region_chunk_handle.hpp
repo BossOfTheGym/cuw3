@@ -62,14 +62,14 @@ namespace cuw3 {
         }
 
         void* owner() const {
-            return _data.ptr();
+            return data_.ptr();
         }
 
         RegionChunkHandleHeaderDataRaw data() const {
-            return _data.data();
+            return data_.data();
         }
 
-        RegionChunkHandleHeaderData _data{}; // atomic memory location/readonly memory location
+        RegionChunkHandleHeaderData data_{}; // atomic memory location/readonly memory location
     };
 
     enum class RegionChunkType : uint32 {
