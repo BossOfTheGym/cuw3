@@ -13,6 +13,8 @@
 #define CUW3_CACHELINE_SIZE 64
 #define CUW3_CONTROL_BLOCK_SIZE 128
 
+#define CUW3_NEW_CACHELINE alignas(CUW3_CACHELINE_SIZE)
+
 #define CUW3_PAGE_SIZE 4096
 #define CUW3_HUGEPAGE_SIZE (1 << 21)
 
@@ -39,3 +41,16 @@
 #define CUW3_MAX_FAST_ARENA_LOOKUP_STEPS 11
 
 #define CUW3_SIZE_CUTOFF (1 << 14)
+
+
+#if __has_feature(address_sanitizer) || defined(__SANITIZE_ADDRESS__)
+    #define CUW3_ASAN_ENABLED
+    #include <sanitizer/asan_interface.h>
+
+    #define CUW3_POISON_MEMORY_REGION(addr, size) ASAN_POISON_MEMORY_REGION((addr),(size))
+    #define CUW3_UNPOISON_MEMORY_REGION(addr, size) ASAN_UNPOISON_MEMORY_REGION((addr), (size))
+#else
+    #define CUW3_POISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
+    #define CUW3_UNPOISON_MEMORY_REGION(addr, size) ((void)(addr), (void)(size))
+#endif
+

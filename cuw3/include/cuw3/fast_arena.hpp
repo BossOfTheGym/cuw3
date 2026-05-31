@@ -1,6 +1,7 @@
 #pragma once
 
 #include "conf.hpp"
+#include "cuw3/defs.hpp"
 #include "list.hpp"
 #include "utils.hpp"
 #include "bitmap.hpp"
@@ -30,18 +31,15 @@ namespace cuw3 {
             return cuw3_field_to_obj(list_entry, FastArena, list_entry);
         }
 
-        // cacheline (least volatile data)
+        CUW3_NEW_CACHELINE // least volatile data)
         RegionChunkHandleHeader region_chunk_header{};
         RetireReclaimEntry retire_reclaim_entry{};
 
     #ifdef CUW3_ENABLE_DEBUG_CODE
         uint64 debug_label{};
-        uint64 pad0[2] = {};
-    #else
-        uint64 pad0[3] = {};
     #endif
 
-        // cacheline (most volatile and owner-modified data)
+        CUW3_NEW_CACHELINE // most volatile data
         FastArenaListEntry list_entry{};
         
         uint64 freed{};
@@ -49,8 +47,7 @@ namespace cuw3 {
         uint64 arena_memory_size{};
         uint64 arena_alignment{};
         
-        alignas(8) void* arena_memory{};
-        uint64 pad1[1] = {};
+        void* arena_memory{};
     };
 
     static_assert(sizeof(FastArena) <= conf_control_block_size, "pack struct field better or increase size of the control block");
@@ -115,11 +112,19 @@ namespace cuw3 {
                 return nullptr;
             }
             arena->top += required_space;
-            return advance_ptr(arena->arena_memory, old_top);
+
+            void* mem = advance_ptr(arena->arena_memory, old_top);
+            CUW3_UNPOISON_MEMORY_REGION(mem, required_space);
+            return mem;
         }
 
         void release_reclaimed(uint64 size) {
-            release(arena->arena_memory, size); // dummy ptr to pass all the checks
+            CUW3_CHECK(is_aligned(size, alignment()), "size is not aligned");
+
+            uint64 new_freed = arena->freed + size;
+            CUW3_CHECK(new_freed <= arena->top, "we have freed more than allocated");
+
+            arena->freed = new_freed;
         }
 
         void release(void* memory, uint64 size) {
@@ -127,6 +132,8 @@ namespace cuw3 {
         }
 
         void release_aligned(void* memory, uint64 size) {
+            CUW3_POISON_MEMORY_REGION(memory, size);
+
             CUW3_CHECK(is_aligned(size, alignment()), "size is not aligned");
             CUW3_CHECK(has_memory_range(memory, size), "memory does not belong to the arena");
 
@@ -137,8 +144,12 @@ namespace cuw3 {
         }
 
         void reset() {
+            CUW3_CHECK(resettable(), "arena was not resettable");
+            
             arena->top = 0;
             arena->freed = 0;
+
+            CUW3_POISON_MEMORY_REGION(arena->arena_memory, arena->arena_memory_size);
         }
 
         bool has_memory_range(void* memory, uint64 size) {
@@ -214,6 +225,8 @@ namespace cuw3 {
         }
 
         [[nodiscard]] RetireReclaimPtr retire_allocation(void* memory, uint64 size) {
+            CUW3_POISON_MEMORY_REGION(memory, align(size, arena->arena_alignment));
+
             CUW3_CHECK(has_memory_range(memory, size), "invalid memory range to retire");
 
             auto retire_reclaim_entry_view = RetireReclaimPtrView{&arena->retire_reclaim_entry.head};

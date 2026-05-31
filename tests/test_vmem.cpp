@@ -3,69 +3,52 @@
 
 #include "cuw3/vmem.hpp"
 #include "cuw3/utils.hpp"
+#include "cuw3/assert.hpp"
 
-int main() {
-	std::cout << "page_size: " << cuw3::vmem_page_size() << std::endl;
-	std::cout << "huge_page_size: " << cuw3::vmem_huge_page_size() << std::endl;
-	std::cout << "allocation granularity: " << cuw3::vmem_alloc_granularity() << std::endl;
+#include <gtest/gtest.h>
 
-	std::cout << std::endl;
+using namespace cuw3;
 
-	void* alloc = cuw3::vmem_alloc(1 << 20, cuw3::VMemReserveCommit);
-	std::cout << "alloc: " << alloc << std::endl;
-	cuw3::vmem_free(alloc, 1 << 20);
+void test_vmem_page_sizes() {
+    CUW3_CHECK(vmem_page_size() > 0, "page_size must be positive");
+    CUW3_CHECK(vmem_alloc_granularity() > 0, "allocation granularity must be positive");
+    CUW3_CHECK(is_alignment(vmem_page_size()), "page_size must be a power of 2");
+    CUW3_CHECK(is_alignment(vmem_alloc_granularity()), "allocation granularity must be a power of 2");
+}
 
-	std::cout << std::endl;
+void test_vmem_alloc_free() {
+    void* alloc = vmem_alloc(1 << 20, VMemAllocType::VMemReserveCommit);
+    CUW3_CHECK(alloc, "vmem_alloc failed");
+    vmem_free(alloc, 1 << 20);
+}
 
-	void* alloc_aligned = cuw3::vmem_alloc_aligned(1 << 23, cuw3::VMemReserveCommit, 1 << 22);
-	std::cout << "alloc_aligned: " << alloc_aligned << " aligned: " << cuw3::is_aligned(alloc_aligned, 1 << 22) << std::endl;
-	cuw3::vmem_free(alloc_aligned, 1 << 23);
+void test_vmem_alloc_aligned() {
+    void* alloc_aligned = vmem_alloc_aligned(1 << 23, VMemAllocType::VMemReserveCommit, 1 << 22);
+    CUW3_CHECK(alloc_aligned, "vmem_alloc_aligned failed");
+    CUW3_CHECK(is_aligned(alloc_aligned, 1 << 22), "allocation must be aligned");
+    vmem_free(alloc_aligned, 1 << 23);
+}
 
-	std::cout << std::endl;
+void test_vmem_reserve_commit_decommit() {
+    void* alloc_reserved = vmem_alloc(1 << 20, VMemAllocType::VMemReserve);
+    CUW3_CHECK(alloc_reserved, "vmem_alloc with VMemReserve failed");
+    CUW3_CHECK(vmem_commit(alloc_reserved, 1 << 20), "vmem_commit failed");
+    CUW3_CHECK(vmem_decommit(alloc_reserved, 1 << 20), "vmem_decommit failed");
+    vmem_free(alloc_reserved, 1 << 20);
+}
 
-	void* alloc_reserved = cuw3::vmem_alloc(1 << 20, cuw3::VMemReserve);
-	std::cout << "alloc_reserved: " << alloc_reserved << std::endl;
-	if (cuw3::vmem_commit(alloc_reserved, 1 << 20)) {
-		std::cout << "committed!" << std::endl;
-	}
-	if (cuw3::vmem_decommit(alloc_reserved, 1 << 20)) {
-		std::cout << "decommitted!" << std::endl;
-	}
-	cuw3::vmem_free(alloc_reserved, 1 << 20);
+TEST(VMem, PageSizes) {
+    test_vmem_page_sizes();
+}
 
-	std::cout << std::endl;
+TEST(VMem, AllocFree) {
+    test_vmem_alloc_free();
+}
 
-	cuw3::usize huge_size_log2 = 40;
-	cuw3::usize huge_size = (cuw3::usize)1 << huge_size_log2;
-	cuw3::usize huge_alignment_log2 = 30;
-	cuw3::usize huge_alignment = (cuw3::usize)1 << huge_alignment_log2;
-	cuw3::usize scatter_size_log2 = 30;
+TEST(VMem, AllocAligned) {
+    test_vmem_alloc_aligned();
+}
 
-	void* huge_alloc = cuw3::vmem_alloc_aligned(huge_size, cuw3::VMemReserve, huge_alignment);
-	std::cout << "huge_alloc: " << huge_alloc << " aligned: " << cuw3::is_aligned(huge_alloc, huge_alignment) << std::endl;
-	if (huge_alloc) {
-		cuw3::usize page_size = cuw3::vmem_page_size();
-		cuw3::usize page_size_log2 = cuw3::intlog2(page_size);
-
-		cuw3::usize stride_log2 = huge_size_log2 - page_size_log2 - (scatter_size_log2 - page_size_log2) + page_size_log2;
-		cuw3::usize stride = (cuw3::usize)1 << stride_log2;
-		cuw3::usize strides = (cuw3::usize)1 << (huge_size_log2 - stride_log2);
-
-		void* addr = huge_alloc;
-		for (cuw3::usize i = 0; i < strides; i++) {
-			if (cuw3::vmem_commit(addr, page_size)) {
-				std::memset(addr, 0xFF, page_size);
-			} else {
-				std::cerr << "failed to commit page at offset " << cuw3::subptr(addr, huge_alloc) << std::endl;
-				break;
-			}
-			addr = cuw3::advance_ptr(addr, stride);
-		}
-		if (cuw3::vmem_decommit(huge_alloc, huge_size)) {
-			std::cout << "decommitted!" << std::endl;
-		}
-	}
-	cuw3::vmem_free(huge_alloc, huge_size);
-
-	return 0;
+TEST(VMem, ReserveCommitDecommit) {
+    test_vmem_reserve_commit_decommit();
 }

@@ -6,6 +6,8 @@
 
 #include "tests_common.hpp"
 
+#include <gtest/gtest.h>
+
 using namespace cuw3;
 
 void run_region_specs_tests(const RegionChunkAllocatorSpecs& specs) {
@@ -333,12 +335,18 @@ void test_region_allocator_mt(uint threads, uint rounds) {
 }
 
 
-int main() {
+TEST(RegionChunkAllocator, Specs) {
     test_region_allocator_specs();
-    test_region_allocator_pools();
-    test_region_allocator_st(16);
-    test_region_allocator_mt(8, 64);
+}
 
-    std::cout << "done!" << std::endl;
-    return 0;
+TEST(RegionChunkAllocator, Pools) {
+    test_region_allocator_pools();
+}
+
+TEST(RegionChunkAllocator, SingleThreaded) {
+    test_region_allocator_st(16);
+}
+
+TEST(RegionChunkAllocator, MultiThreaded) {
+    test_region_allocator_mt(8, 64);
 }

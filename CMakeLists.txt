@@ -8,7 +8,9 @@ option(CUW3_BUILD_SHARED "build as shared library" ON)
 option(CUW3_DISABLE_GENERAL_CHECKS "disable general checks and assertions" OFF)
 option(CUW3_DISABLE_CRITICAL_CHECKS "disable critical checks" OFF)
 
+option(CUW3_ENABLE_CLANG_TIDY "Enable clang-tidy checks" OFF)
 option(CUW3_ENABLE_TSAN "Enable TSAN" OFF)
+option(CUW3_ENABLE_ASAN "Enable ASAN" OFF)
 
 set(CUW3_BUILD_CONFIG $<CONFIG>)
 
@@ -25,6 +27,16 @@ if (CUW3_ENABLE_TSAN AND NOT MSVC)
     add_link_options(-fsanitize=thread)
 endif()
 
+if (CUW3_ENABLE_ASAN AND NOT MSVC)
+    add_compile_options(-fsanitize=address -g)
+    add_link_options(-fsanitize=address)
+endif()
+
+if(ENABLE_ASAN AND ENABLE_TSAN)
+    message(FATAL_ERROR "Cannot enable both ASan and TSan simultaneously")
+endif()
+
+
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL" CACHE STRING "")
 
 set(CMAKE_CXX_STANDARD 20)
@@ -35,9 +47,14 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+if (CUW3_ENABLE_CLANG_TIDY)
+    set(CMAKE_CXX_CLANG_TIDY clang-tidy)
+endif()
+
 
 project(cuw3 VERSION ${CUW3_VERSION} DESCRIPTION "yet another lock-free memory allocator" LANGUAGES C CXX)
 
+include(FetchContent)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
@@ -58,11 +75,20 @@ endfunction()
 
 add_subdirectory(cuw3)
 if(CUW3_BUILD_TESTS)
+    FetchContent_Declare(
+        googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+        EXCLUDE_FROM_ALL
+    )
+    
+    include(GoogleTest)
+    enable_testing()
     add_subdirectory(tests)
 endif()
 if(CUW3_BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
-if(CUW3_BENCHMARKS)
+if(CUW3_BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()

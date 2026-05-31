@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ptr.hpp"
+#include "defs.hpp"
 #include "conf.hpp"
 #include "funcs.hpp"
 #include "assert.hpp"
@@ -642,6 +643,7 @@ namespace cuw3 {
             for (int rounds = alloc_params.rounds; rounds != 0; ) {
                 auto allocation = _allocate_chunk(region, alloc_params);
                 if (allocation) {
+                    CUW3_UNPOISON_MEMORY_REGION(handle_from_index(allocation.handle), specs->handle_size);
                     return allocation;
                 }
                 if (allocation.null()) {
@@ -660,6 +662,7 @@ namespace cuw3 {
             CUW3_CHECK(region_specs.check_chunk(location.chunk), "invalid chunk value");
             CUW3_CHECK(region_specs.check_handle(location.handle), "invalid handle value");
 
+            CUW3_POISON_MEMORY_REGION(handle_from_index(location.handle), specs->handle_size);
             pools->deallocate(location.handle, location.region, location.split, RegionAllocatorPoolHandleOps{this});
         }
 

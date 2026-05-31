@@ -1,24 +1,13 @@
-enable_testing()
+add_executable_ext(cuw3_tests 
+    test_atomic.cpp
+    test_bitmap.cpp
+    test_fast_arena_allocator.cpp
+    test_region_chunk_allocator.cpp
+    test_thread_graveyard.cpp
+    test_vmem.cpp
+    test_cuw3.cpp
+)
 
-add_executable_ext(test_atomic test_atomic.cpp)
-target_link_libraries(test_atomic cuw3)
+target_link_libraries(cuw3_tests PRIVATE cuw3 gtest gtest_main)
 
-add_executable_ext(test_bitmap test_bitmap.cpp)
-target_link_libraries(test_bitmap cuw3)
-
-add_executable_ext(test_fast_arena_allocator test_fast_arena_allocator.cpp)
-target_link_libraries(test_fast_arena_allocator cuw3)
-
-add_executable_ext(test_region_chunk_allocator test_region_chunk_allocator.cpp)
-target_link_libraries(test_region_chunk_allocator cuw3)
-
-add_executable_ext(test_thread_graveyard test_thread_graveyard.cpp)
-target_link_libraries(test_thread_graveyard cuw3)
-
-add_executable_ext(test_vmem test_vmem.cpp)
-target_link_libraries(test_vmem cuw3)
-
-add_executable_ext(test_cuw3 test_cuw3.cpp)
-target_link_libraries(test_cuw3 cuw3)
-
-#add_test(NAME dummy COMMAND dummy)
+gtest_discover_tests(cuw3_tests)

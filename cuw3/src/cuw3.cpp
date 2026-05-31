@@ -46,6 +46,7 @@ namespace {
             vmem_free(alloc_mem, alloc_size);
             return nullptr;
         }
+        CUW3_UNPOISON_MEMORY_REGION(alloc_mem, alloc_size);
         return alloc;
     }
 
@@ -73,10 +74,11 @@ namespace {
         return config;
     }
 
-    cuw3::ThreadLocalAllocatorConfig cuw3_create_tla_config() {
+    cuw3::ThreadLocalAllocatorConfig cuw3_create_tla_config(uint64 thread_id) {
         cuw3::ThreadLocalAllocatorConfig config{};
         config.small_alloc_config = cuw3_create_fast_arena_small_alloc_config();
         config.step_split_alloc_config = cuw3_create_fast_arena_step_split_alloc_config();
+        config.thread_id = thread_id;
         return config;
     }
 
@@ -94,14 +96,14 @@ namespace {
             return nullptr;
         }
         
-        auto config = cuw3_create_tla_config();
+        auto config = cuw3_create_tla_config(alloc->acquire_thread_id());
         auto* tla = cuw3::ThreadLocalAllocator::create(Memory::from(tla_mem, tla_size), config);
         if (!tla) {
             vmem_free(tla_mem, tla_size);
             return nullptr;
         }
-        tla->thread_id = alloc->acquire_thread_id();
-        
+        CUW3_UNPOISON_MEMORY_REGION(tla, tla_size);
+
         return tla;
     }
 
@@ -119,6 +121,7 @@ namespace {
 
     void cuw3_destroy_tla(cuw3::ThreadLocalAllocator* tla) {
         uint64 tla_size = sizeof(cuw3::ThreadLocalAllocator);
+        CUW3_POISON_MEMORY_REGION(tla, tla_size);
         vmem_free(tla, tla_size);
     }
 

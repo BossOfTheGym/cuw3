@@ -19,6 +19,9 @@
 #include <algorithm>
 #include <condition_variable>
 
+#include <gtest/gtest.h>
+
+
 using namespace cuw3;
 
 namespace fast_arena_tests {
@@ -1103,20 +1106,39 @@ namespace fast_arena_allocator_tests {
     }
 }
 
-int main() {
+
+TEST(TestFastArena, TestArenaFullExaustion) {
     fast_arena_tests::test_arena_full_exaustion(64, 1 << 16);
+}
+
+TEST(TestaFastArena, TestArenaPartialExaustion1) {
     fast_arena_tests::test_arena_partial_exaustion1(64);
+}
+
+TEST(TestFastArena, TestArenaPartialExaustion2) {
     fast_arena_tests::test_arena_partial_exaustion2(64);
+}
 
+TEST(TestFastArena, TestFastArenaBinsLocation) {
     fast_arena_allocator_tests::test_fast_arena_bins_location();
+}
+
+TEST(TestFastArena, TestFastArenaAllocatorSt) {
     fast_arena_allocator_tests::test_fast_arena_allocator_st(1 << 20, 1 << 8, 1 << 6, 1 << 16);
+}
+
+TEST(TestFastArena, TestFastArenaAllocatorStMaxAlloc) {
     fast_arena_allocator_tests::test_fast_arena_allocator_st_max_alloc(1 << 20, 1 << 8, 1 << 6, 1 << 16);
+}
+
+TEST(TestFastArena, TestFastArenaAllocatorRetireReclaim) {
     fast_arena_allocator_tests::test_fast_arena_allocator_retire_reclaim(1 << 18, 1 << 12, 8, 1 << 17);
+}
+
+TEST(TestFastArena, TestFastArenaAllocatorRetireReclaimHighContention) {
     fast_arena_allocator_tests::test_fast_arena_allocator_retire_reclaim_high_contention(1 << 10);
-    
+}
+
+TEST(TestFastArena, TestFastArenaSmallAllocator) {
     fast_arena_allocator_tests::test_fast_arena_small_allocator(16);
-
-    std::cout << "it's done!" << std::endl;
-
-    return 0;
 }

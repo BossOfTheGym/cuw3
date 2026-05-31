@@ -1,6 +1,7 @@
 #pragma once
 
 #include "conf.hpp"
+#include "defs.hpp"
 #include "vmem.hpp"
 #include "funcs.hpp"
 #include "utils.hpp"
@@ -30,6 +31,10 @@ namespace cuw3 {
 
             bundle.pool_handles = vmem_alloc_aligned(specs.total_pool_handles_size, VMemAllocType::VMemReserveCommit, specs.pool_handles_alignment);
             CUW3_CHECK_GOTO(bundle.pool_handles, failed_pool_handles_alloc, "failed to allocate pool handles memory");
+
+            // regions may be too big to poison
+            // we cannot poison pool_handles because this memory can be accessed even when considered 'dead'
+            CUW3_POISON_MEMORY_REGION(bundle.handles, specs.total_handles_size);
             return bundle;
 
         failed_pool_handles_alloc:
@@ -161,11 +166,11 @@ namespace cuw3 {
 
             // THINK : we work with internal tla data here, we ca put all of this into some thread_local variable and call it auxiliary state
             // but out of convenience we work with it here
-            RegionChunkAllocParams alloc_params{};
-            alloc_params.rounds = 4;
-            alloc_params.attempts = -1;
-            alloc_params.split_step = 1;
             for (uint32 curr_region = region; curr_region < rca.get_num_regions(); curr_region++) {
+                RegionChunkAllocParams alloc_params{};
+                alloc_params.rounds = 4;
+                alloc_params.attempts = -1;
+                alloc_params.split_step = 1;
                 alloc_params.split_start = tla->last_chunk_pool_split_id[curr_region];
                 if (auto chunk_allocation = rca.allocate_chunk(curr_region,  alloc_params)) {
                     tla->last_chunk_pool_split_id[curr_region] = chunk_allocation.split; // update split
@@ -196,7 +201,7 @@ namespace cuw3 {
             if (!chunk_memory) {
                 goto failed_to_allocate_chunk;
             }
-            
+
         #ifdef CUW3_ENABLE_DEBUG_CODE
             set_handle_owner(tla, chunk_allocation.handle);
         #endif

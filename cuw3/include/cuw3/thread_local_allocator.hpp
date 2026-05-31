@@ -15,6 +15,7 @@ namespace cuw3 {
     struct ThreadLocalAllocatorConfig {
         FastArenaStepSplitAllocatorConfig step_split_alloc_config{};
         FastArenaSmallAllocatorConfig small_alloc_config{};
+        uint64 thread_id{};
     };
 
     using ThreadGraveyardEntry = DefaultThreadGraveyardEntry;
@@ -38,6 +39,8 @@ namespace cuw3 {
 
             auto* small_allocator = FastArenaSmallAllocator::create(Memory::from(&tla->small_allocator), config.small_alloc_config);
             CUW3_CHECK_RETURN_VAL(small_allocator, nullptr, "failed to create small_allocator");
+
+            tla->thread_id = config.thread_id;
 
             return tla;
         }

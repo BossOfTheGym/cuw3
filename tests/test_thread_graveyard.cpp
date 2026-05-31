@@ -2,6 +2,8 @@
 
 #include "tests_common.hpp"
 
+#include <gtest/gtest.h>
+
 using namespace cuw3;
 
 
@@ -196,17 +198,18 @@ void test_graveyard_chaos_mt(uint num_elements, uint num_threads, uint acquire_s
     CUW3_CHECK(graveyard.is_empty(), "graveyard must be empty at that point");
 }
 
-int main() {
+TEST(ThreadGraveyard, SingleThreaded) {
     test_graveyard_st(16);
+}
 
-    std::cout << "test_graveyard_chaos_mt(128, 2, 1 << 12)" << std::endl;
+TEST(ThreadGraveyard, ChaosMt_128_2) {
     test_graveyard_chaos_mt(128, 2, 1 << 12);
-    std::cout << "test_graveyard_chaos_mt(8, 8, 1 << 17)" << std::endl;
+}
+
+TEST(ThreadGraveyard, ChaosMt_8_8) {
     test_graveyard_chaos_mt(8, 8, 1 << 17);
-    std::cout << "test_graveyard_chaos_mt(128, 8, 1 << 12)" << std::endl;
+}
+
+TEST(ThreadGraveyard, ChaosMt_128_8) {
     test_graveyard_chaos_mt(128, 8, 1 << 12);
-
-    std::cout << "it's done!" << std::endl;
-
-    return 0;
 }
