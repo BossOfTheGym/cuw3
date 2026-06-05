@@ -1,7 +1,6 @@
 #pragma once
 
 #include "export.hpp"
-
 #include "typedefs.hpp"
 
 extern "C" {

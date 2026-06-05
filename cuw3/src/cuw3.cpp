@@ -9,6 +9,8 @@
 
 using namespace cuw3;
 
+// many tests and benchmarks rely on the consts used here
+// so be sure to change themas well or too provide appropriate means to query necessary info
 namespace {
     inline constexpr uint64 cuw3_try_reclaim_each_op = 8;
     inline constexpr uint64 cuw3_try_cleanup_each_op = 16;

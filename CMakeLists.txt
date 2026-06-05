@@ -74,6 +74,7 @@ function(add_executable_ext target)
 endfunction()
 
 add_subdirectory(cuw3)
+
 if(CUW3_BUILD_TESTS)
     FetchContent_Declare(
         googletest
@@ -86,9 +87,23 @@ if(CUW3_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+if(CUW3_BUILD_BENCHMARKS)
+    FetchContent_Declare(
+        benchmark
+        GIT_REPOSITORY https://github.com/google/benchmark.git
+        GIT_TAG v1.9.5
+        EXCLUDE_FROM_ALL
+    )
+
+    set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(benchmark)
+
+    add_subdirectory(benchmarks)
+endif()
+
 if(CUW3_BUILD_EXAMPLES)
     add_subdirectory(examples)
-endif()
-if(CUW3_BUILD_BENCHMARKS)
-    add_subdirectory(benchmarks)
 endif()
