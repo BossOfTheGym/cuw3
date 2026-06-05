@@ -112,6 +112,8 @@ namespace cuw3 {
 
     template<UnsignedInteger T>
     constexpr T bitmask(T first_bit, T last_bit) {
+        CUW3_ASSERT(first_bit < last_bit, "last_bit is less than first_bit");
+        CUW3_ASSERT(last_bit <= bitsize<T>(), "last_bit is too big");
         T head = first_bit;
         T tail = bitsize<T>() - last_bit;
         T all = ~(T)0;

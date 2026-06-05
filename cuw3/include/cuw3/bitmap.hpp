@@ -14,107 +14,6 @@ namespace cuw3 {
         static constexpr T bin_capacity = (bit_capacity + bitsize<T>() - 1) / bitsize<T>();
         static constexpr T null_bit = bit_capacity;
 
-        gsize set_first_unset_bin_(T bin, T mask) {
-            gsize rel = std::countr_one(bins[bin] | mask);
-            gsize bit = bin * bin_size + rel;
-            bins[bin] = bitmask_set(bins[bin], rel);
-            return bit;
-        }
-
-        gsize set_first_unset_bin_range_(T first_bit, T last_bit) {
-            if (first_bit >= last_bit) {
-                return null_bit;
-            }
-            gsize bin = first_bit / bin_size;
-            gsize mask = bitmask_inv(first_bit % bin_size, last_bit % bin_size);
-            if (!bitmask_all_set(bins[bin] | mask)) {
-                return set_first_unset_bin_(bin, mask);
-            }
-            return null_bit;
-        }
-
-        gsize get_first_set_bin_(T bin, T mask) const {
-            gsize rel = std::countr_zero(bins[bin] & mask);
-            gsize bit = bin * bin_size + rel;
-            return bit;
-        }
-
-        gsize get_first_set_bin_range_(T first_bit, T last_bit) const {
-            if (first_bit >= last_bit) {
-                return null_bit;
-            }
-            gsize bin = first_bit / bin_size;
-            gsize mask = bitmask(first_bit % bin_size, last_bit % bin_size);
-            if (bitmask_any_set(bins[bin] & mask)) {
-                return get_first_set_bin_(bin, mask);
-            }
-            return null_bit;
-        }
-
-
-        gsize set_first_unset(gsize start = 0) {
-            CUW3_ASSERT(start < bit_capacity, "invalid bit");
-
-            gsize head_first_bit = start;
-            gsize head_last_bit = std::min(align(start, bin_size), bit_capacity);
-            gsize head_bit = set_first_unset_bin_range_(head_first_bit, head_last_bit);
-            if (head_bit != null_bit) {
-                return head_bit;
-            }
-            if (head_last_bit == bit_capacity) {
-                return null_bit;
-            }
-
-            gsize first_bit = head_last_bit;
-            gsize last_bit = bit_capacity - bit_capacity % bin_size;
-            while (first_bit < last_bit) {
-                gsize bin = first_bit / bin_size;
-                if (!bitmask_all_set(bins[bin])) {
-                    return set_first_unset_bin_(bin, 0);
-                }
-                first_bit += bin_size;
-            }
-            if (last_bit == bit_capacity) {
-                return null_bit;
-            }
-
-            gsize tail_first_bit = last_bit;
-            gsize tail_last_bit = bit_capacity;
-            gsize tail_bit = set_first_unset_bin_range_(tail_first_bit, tail_last_bit);
-            return tail_bit;
-        }
-
-        gsize get_first_set(gsize start = 0) const {
-            CUW3_ASSERT(start < bit_capacity, "invalid bit");
-
-            gsize head_first_bit = start;
-            gsize head_last_bit = std::min(align(start, bin_size), bit_capacity);
-            gsize head_bit = get_first_set_bin_range_(head_first_bit, head_last_bit);
-            if (head_bit != null_bit) {
-                return head_bit;
-            }
-            if (head_last_bit == bit_capacity) {
-                return null_bit;
-            }
-
-            gsize first_bit = head_last_bit;
-            gsize last_bit = bit_capacity - bit_capacity % bin_size;
-            while (first_bit < last_bit) {
-                gsize bin = first_bit / bin_size;
-                if (bitmask_any_set(bins[bin])) {
-                    return get_first_set_bin_(bin, bitmask_all<T>());
-                }
-                first_bit += bin_size;
-            }
-            if (last_bit == bit_capacity) {
-                return null_bit;
-            }
-
-            gsize tail_first_bit = last_bit;
-            gsize tail_last_bit = bit_capacity;
-            gsize tail_bit = get_first_set_bin_range_(tail_first_bit, tail_last_bit);
-            return tail_bit;
-        }
 
         void set(gsize bit) {
             CUW3_ASSERT(bit < bit_capacity, "invalid bit");
@@ -133,7 +32,6 @@ namespace cuw3 {
                 bin = 0;
             }
         }
-
 
         bool get(gsize bit) const {
             CUW3_ASSERT(bit < bit_capacity, "invalid bit");
@@ -161,6 +59,41 @@ namespace cuw3 {
             return !any_set(start);
         }
 
+
+        gsize set_first_unset(gsize start = 0) {
+            CUW3_ASSERT(start < bit_capacity, "invalid bit");
+
+            gsize curr = start;
+            gsize last = bit_capacity;
+            while (curr < last) {
+                gsize next = std::min(align_down(curr + bin_size, bin_size), last);
+                gsize mask = bitmask_inv(curr % bin_size, curr % bin_size + next - curr);
+                if (bitmask_any_set(~(bins[curr / bin_size] | mask))) {
+                    gsize bit = align_down(curr, bin_size) + std::countr_one(bins[curr / bin_size] | mask);
+                    set(bit);
+                    return bit;
+                } 
+                curr = next;
+            }
+            return null_bit;
+        }
+
+        gsize get_first_set(gsize start = 0) const {
+            CUW3_ASSERT(start < bit_capacity, "invalid bit");
+
+            gsize curr = start;
+            gsize last = bit_capacity;
+            while (curr < last) {
+                gsize next = std::min(align_down(curr + bin_size, bin_size), last);
+                gsize mask = bitmask(curr % bin_size, curr % bin_size + next - curr);
+                if (bins[curr / bin_size] & mask) {
+                    gsize bit = align_down(curr, bin_size) + std::countr_zero(bins[curr / bin_size] & mask);
+                    return bit;
+                } 
+                curr = next;
+            }
+            return null_bit;
+        }
 
         gsize count(gsize start = 0) const {
             CUW3_ASSERT(start < bit_capacity, "invalid bit");

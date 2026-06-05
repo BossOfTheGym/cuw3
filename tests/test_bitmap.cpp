@@ -84,8 +84,8 @@ TEST(TestBitmap, TestBitmapSetFirstUnset) {
             ASSERT_TRUE(bit == start + i);
             bitmap.unset(bit);
         }
+        ASSERT_TRUE(check_cuw_bitmap(bitmap, check_all_empty));
     }
-    ASSERT_TRUE(check_cuw_bitmap(bitmap, check_all_empty));
 }
 
 TEST(TestBitmap, TestBitmapPartialSetGetFirstSet) {
