@@ -1,0 +1,1 @@
+I, The Emperor of Mankind, grant you the ultimate permission to use this code for whatever purpose you want!
