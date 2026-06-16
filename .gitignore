@@ -1,3 +1,5 @@
 build*
 .cache
 .vscode
+perf.data
+perf.data.old

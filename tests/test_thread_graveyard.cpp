@@ -91,7 +91,7 @@ struct TestThreadGraveyard {
     }
 
     uint64 get_num_grave_entries() const {
-        return graveyard.num_grave_entries;
+        return graveyard.get_num_grave_entries();
     }
 
     bool is_empty() {

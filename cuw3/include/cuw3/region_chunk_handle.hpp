@@ -44,8 +44,32 @@ namespace cuw3 {
     // But it must not be an issue because it will be allocated via virtual memory facility anyway (and common page size is 4Kib anyway (12 zero bits))
     //
     // As the name suggests: this must be placed at the beginning of the handle memory location
+    //
+    // THREADING INVARIANT (why these reads need no atomics):
+    //   The header is write-once-before-publish and immutable while live.
+    //   * It is written only while the chunk is exclusively owned by one thread and not yet
+    //     reachable by any other thread - i.e. during arena construction, before the owner
+    //     hands out any pointer into the chunk. On chunk reuse it is re-stamped in this same
+    //     exclusive window, before the chunk is re-published.
+    //   * It is never mutated while the chunk is reachable by other threads.
+    //
+    //   So for any header read there is no conflicting write: every read is ordered after the
+    //   write by a happens-before edge (the third bullet of the rule above). The owner writes
+    //   the header, then allocates from the arena, then the pointer reaches another thread
+    //   through that thread's own malloc->free handoff synchronization. No write is concurrent
+    //   with any read => no data race => owner() and data() are plain non-atomic loads.
+    //
+    //   NOTE: this is NOT an atomically-mutable field. If a future feature needs to change the
+    //   owner of a *live*, already-published chunk (e.g. cross-thread ownership transfer), it
+    //   must switch these accesses to std::atomic_ref - the non-atomic reads above are only
+    //   valid under the write-once-before-publish discipline.
+    //
+    // Packing note: data occupies the low `region_chunk_handle_header_data_bits` bits, so the
+    // owner pointer must be aligned to region_owner_alignment. This holds because
+    // ThreadLocalAllocator is alignas(region_owner_alignment) and allocated page-aligned.
     using RegionChunkHandleHeaderDataRaw = uint64;
     
+    // now there are only two types of possible allocators but let's reserve it up to 64
     inline constexpr uint64 region_chunk_handle_header_data_bits = 6;
     inline constexpr uint64 region_chunk_handle_header_ptr_alignment = 1 << region_chunk_handle_header_data_bits;
     inline constexpr uint64 region_owner_alignment = region_chunk_handle_header_ptr_alignment;
@@ -55,7 +79,8 @@ namespace cuw3 {
     using RegionChunkPoolLinkType = uint32;
 
     // NOTE : things must be atomic if we need to change the owner
-    // this struct must be at the beginning of each handle
+    // this struct must be at the beginning of each handle.
+    // well, its location must have the same offset within handle location
     struct RegionChunkHandleHeader {
         static RegionChunkHandleHeader from(void* owner, uint64 data) {
             return {RegionChunkHandleHeaderData::packed(owner, data)};
@@ -69,11 +94,11 @@ namespace cuw3 {
             return data_.data();
         }
 
-        RegionChunkHandleHeaderData data_{}; // atomic memory location/readonly memory location
+        RegionChunkHandleHeaderData data_{}; // write-once before publish, then immutable while live (see invariant above)
     };
 
     enum class RegionChunkType : uint32 {
-        FastArenaStepSplitAllocator,
-        FastArenaSmallAllocator,
+        FastArenaStepSplitAllocator = 1,
+        FastArenaSmallAllocator = 2,
     };
 }

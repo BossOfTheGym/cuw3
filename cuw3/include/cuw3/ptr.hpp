@@ -20,6 +20,7 @@ namespace cuw3 {
         }
        
         static AlignmentPackedInt packed_shifted(T value, T alignment) {
+            CUW3_ASSERT(!(value >> (bitsize<T>() - alignment_bits)), "value too large to shift");
             return packed(value << alignment_bits, alignment);
         }
 
@@ -82,6 +83,7 @@ namespace cuw3 {
         }
     };
 
+    // alignment is a knowm value and must be the same in all functions ()
     template<IntptrLike T>
     struct OffsetPtr {
         static OffsetPtr packed(void* ptr, T value, T alignment) {
@@ -119,7 +121,7 @@ namespace cuw3 {
 
         template<IntptrLike T>
         operator T() const {
-            return -1;
+            return (T)value;
         }
 
         template<class T>

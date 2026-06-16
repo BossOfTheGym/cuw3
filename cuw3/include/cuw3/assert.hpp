@@ -61,7 +61,7 @@
     #define CUW3_DISABLE_CRITICAL_CHECKS
 #endif
 
-#ifndef CUW3_DISABLE_ALL_CHECKS
+#ifndef CUW3_DISABLE_GENERAL_CHECKS
     #define CUW3_ASSERT(cond, fmt, ...) CUW3_ASSERT_(cond, fmt __VA_OPT__(,)  __VA_ARGS__)
     #define CUW3_ABORT(fmt, ...) CUW3_ABORT_(fmt __VA_OPT__(,)  __VA_ARGS__)
     #define CUW3_CHECK(cond, fmt, ...) CUW3_CHECK_(cond, fmt __VA_OPT__(,)  __VA_ARGS__)

@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 
 option(CUW3_BUILD_TESTS "build tests" ON)
-option(CUW3_BUILD_EXAMPLES "build examples" ON)
 option(CUW3_BUILD_BENCHMARKS "build benchmarks" ON)
 option(CUW3_BUILD_SHARED "build as shared library" ON)
 
@@ -102,8 +101,4 @@ if(CUW3_BUILD_BENCHMARKS)
     FetchContent_MakeAvailable(benchmark)
 
     add_subdirectory(benchmarks)
-endif()
-
-if(CUW3_BUILD_EXAMPLES)
-    add_subdirectory(examples)
 endif()

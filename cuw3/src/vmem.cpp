@@ -46,7 +46,14 @@ namespace cuw3 {
         GetSystemInfo(&si);
         usize alignment = std::max<usize>({si.dwPageSize, si.dwAllocationGranularity, address_alignment});
 
-        DWORD alloc_flags = MEM_RESERVE | (alloc_type & VMemReserveCommit ? MEM_COMMIT : 0);
+        DWORD alloc_flags{};
+        if ((alloc_type & VMemReserveCommit) == VMemReserve) {
+            alloc_flags = MEM_RESERVE;
+        } else if ((alloc_type & VMemReserveCommit) == VMemReserveCommit) {
+            alloc_flags = MEM_RESERVE | MEM_COMMIT;
+        } else {
+            return nullptr;
+        }
         DWORD protection_flags = PAGE_READWRITE;
 
         MEM_ADDRESS_REQUIREMENTS addr_reqs{};
@@ -123,6 +130,13 @@ namespace cuw3 {
     }
 
     CUW3_API void* vmem_alloc_aligned(usize size, VMemAllocType alloc_type, usize address_alignment) {
+        bool reserve_or_reserve_commit
+            = (alloc_type & VMemReserveCommit) == VMemReserve
+            || (alloc_type & VMemReserveCommit) == VMemReserveCommit;
+        if (!reserve_or_reserve_commit) {
+            return nullptr;
+        }
+        
         usize page_size = vmem_page_size();
         address_alignment = std::max(page_size, address_alignment);
         if (address_alignment == page_size) {
@@ -148,7 +162,7 @@ namespace cuw3 {
         usize tail_size = address_aligned_size + address_alignment - page_aligned_size - head_size;
         vmem_free(advance_ptr(aligned_mem, page_aligned_size), tail_size);
 
-        if (alloc_type == VMemReserveCommit) {
+        if (alloc_type & VMemCommit) {
             vmem_commit(aligned_mem, page_aligned_size); // page_aligned_size is not strictly neccessary here
         }
         return aligned_mem;
@@ -164,7 +178,9 @@ namespace cuw3 {
     }
 
     CUW3_API bool vmem_decommit(void* mem, usize size) {
-        return mprotect(mem, size, PROT_NONE) == 0;
+        bool prot = mprotect(mem, size, PROT_NONE) == 0;
+        bool adv = madvise(mem, size, MADV_DONTNEED) == 0;
+        return prot && adv;
     }
 
 

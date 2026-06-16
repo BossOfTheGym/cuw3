@@ -12,9 +12,6 @@ using namespace cuw3;
 // many tests and benchmarks rely on the consts used here
 // so be sure to change themas well or too provide appropriate means to query necessary info
 namespace {
-    inline constexpr uint64 cuw3_try_reclaim_each_op = 8;
-    inline constexpr uint64 cuw3_try_cleanup_each_op = 16;
-
     RegionChunkAllocatorSpecsConfig cuw3_create_rca_alloc_specs_config() {
         RegionChunkAllocatorSpecsConfig config{};
         config.region_sizes = conf_region_sizes_log2;
@@ -30,7 +27,7 @@ namespace {
     AllocatorConfig cuw3_create_allocator_config() {
         AllocatorConfig config{};
         config.rca_specs_config = cuw3_create_rca_alloc_specs_config();
-        config.contention_split = conf_max_contention_split;
+        config.contention_split = 16;
         config.num_grave_entries = conf_graveyard_slot_count;
         return config;
     }
@@ -104,7 +101,7 @@ namespace {
             vmem_free(tla_mem, tla_size);
             return nullptr;
         }
-        CUW3_UNPOISON_MEMORY_REGION(tla, tla_size);
+        CUW3_UNPOISON_MEMORY_REGION(tla_mem, tla_size);
 
         return tla;
     }
@@ -122,6 +119,10 @@ namespace {
     }
 
     void cuw3_destroy_tla(cuw3::ThreadLocalAllocator* tla) {
+        auto* alloc = cuw3_get_allocator();
+        CUW3_CHECK_CRITICAL(alloc, "Failed to get alloc");
+        alloc->free_tla_resources(tla); // TODO
+
         uint64 tla_size = sizeof(cuw3::ThreadLocalAllocator);
         CUW3_POISON_MEMORY_REGION(tla, tla_size);
         vmem_free(tla, tla_size);
@@ -178,15 +179,9 @@ extern "C" {
         }
 
         alloc->deallocate(tla, ptr, size);
-
-        tla->extended_free_counter--;
-        if (tla->extended_free_counter % cuw3_try_reclaim_each_op == 0) {
-            alloc->reclaim(tla);
-        }
-        if (tla->extended_free_counter % cuw3_try_cleanup_each_op == 0) {
-            if (auto* released = alloc->do_tla_cleanup(tla)) {
-                cuw3_destroy_tla(released);
-            }
+        (void)alloc->this_tla_cleanup(tla);// tla is still alive
+        if (auto* released = alloc->grave_tla_cleanup(tla)) {
+            cuw3_destroy_tla(released);
         }
     }
 
@@ -211,7 +206,7 @@ extern "C" {
         if (!tla) {
             return;
         }
-        if (auto* released = alloc->do_tla_cleanup(tla)) {
+        if (auto* released = alloc->grave_tla_cleanup(tla)) {
             cuw3_destroy_tla(released);
         }
     }

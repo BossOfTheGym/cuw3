@@ -22,7 +22,7 @@ bool check_cuw_bitmap(const CuwBitmap& bitmap, const CuwBitmapArray& check) {
     return std::ranges::equal(bitmap.bins, check);
 }
 
-TEST(TestBitmap, TestBitmapAllSetUnset) {
+TEST(Bitmap, AllSetUnset) {
     const CuwBitmapArray check_all_set = {0xFFFFFFFFFFFFFFFF, 0xFFFFFFFF};
     const CuwBitmapArray check_all_unset = {};
 
@@ -38,7 +38,7 @@ TEST(TestBitmap, TestBitmapAllSetUnset) {
     ASSERT_TRUE(check_cuw_bitmap(bitmap, check_all_unset));
 }
 
-TEST(TestBitmap, TestBitmapEvenSetUnset) {
+TEST(Bitmap, EvenSetUnset) {
     const CuwBitmapArray check_all_even = {0x5555555555555555, 0x55555555};
     const CuwBitmapArray check_all_empty = {};
 
@@ -54,7 +54,7 @@ TEST(TestBitmap, TestBitmapEvenSetUnset) {
     ASSERT_TRUE(check_cuw_bitmap(bitmap, check_all_empty));
 }
 
-TEST(TestBitmap, TestBitmapOddSetUnset) {
+TEST(Bitmap, OddSetUnset) {
     const CuwBitmapArray check_all_odd = {0xAAAAAAAAAAAAAAAA, 0xAAAAAAAA};
     const CuwBitmapArray check_all_empty = {};
 
@@ -70,7 +70,7 @@ TEST(TestBitmap, TestBitmapOddSetUnset) {
     ASSERT_TRUE(check_cuw_bitmap(bitmap, check_all_empty));
 }
 
-TEST(TestBitmap, TestBitmapSetFirstUnset) {
+TEST(Bitmap, SetFirstUnset) {
     const CuwBitmapArray check_all_empty = {};
 
     CuwBitmap bitmap{};
@@ -88,7 +88,7 @@ TEST(TestBitmap, TestBitmapSetFirstUnset) {
     }
 }
 
-TEST(TestBitmap, TestBitmapPartialSetGetFirstSet) {
+TEST(Bitmap, PartialSetGetFirstSet) {
     const CuwBitmapArray check_all_empty = {};
 
     CuwBitmap bitmap{};
@@ -110,7 +110,7 @@ TEST(TestBitmap, TestBitmapPartialSetGetFirstSet) {
     }
 }
 
-TEST(TestBitmap, TestBitmapAnySetAllReset) {
+TEST(Bitmap, AnySetAllReset) {
     const CuwBitmapArray check_all_empty = {};
 
     CuwBitmap bitmap{};
@@ -181,7 +181,7 @@ TEST(TestBitmap, TestBitmapAnySetAllReset) {
     ASSERT_TRUE(check_cuw_bitmap(bitmap, check_all_empty));
 }
 
-TEST(TestBitmap, TestBitmapCount) {
+TEST(Bitmap, Count) {
     const CuwBitmapArray check_all_empty = {};
 
     CuwBitmap bitmap{};
@@ -243,7 +243,7 @@ TEST(TestBitmap, TestBitmapCount) {
     ASSERT_TRUE(check_cuw_bitmap(bitmap, check_all_empty));
 }
 
-TEST(TestBitmap, TestBitmapSampleSetBit) {
+TEST(Bitmap, SampleSetBit) {
     const CuwBitmapArray check_all_empty = {};
 
     CuwBitmap bitmap{};
@@ -333,7 +333,7 @@ TEST(TestBitmap, TestBitmapSampleSetBit) {
     ASSERT_TRUE(check_cuw_bitmap(bitmap, check_all_empty));
 }
 
-TEST(TestBitmap, TestBitmapGetLastSetBit) {
+TEST(Bitmap, GetLastSetBit) {
     const CuwBitmapArray check_all_empty = {};
     
     CuwBitmap bitmap{};

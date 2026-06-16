@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "typedefs.hpp"
+
 namespace cuw3 {
     // Some forethought:
     // * we would like to use pointer compression.
@@ -73,7 +75,7 @@ namespace cuw3 {
     }
 
     // checks that node references itself
-    // can be used toi check that list is empty (only terminator-node is in the list)
+    // can be used to check that list is empty (only terminator-node is in the list)
     template<class NodeRef, class ListOps>
     bool list_empty(NodeRef node, ListOps&& ops) {
         return ops.self_equals(node);
@@ -81,7 +83,7 @@ namespace cuw3 {
 
     template<class NodeRef, class ListOps>
     void list_insert_after(NodeRef after, NodeRef node, ListOps&& ops) {
-        // standart implementation
+        // standard implementation
         // node->next = after->next;
         // node->prev = after;
         // after->next->prev = node;
@@ -103,7 +105,7 @@ namespace cuw3 {
     // the rest of the list would just dangle
     template<class NodeRef, class ListOps>
     void list_erase(NodeRef node, ListOps&& ops) {
-        // standart implementation
+        // standard implementation
         // Entry* prev = entry->prev;
         // Entry* next = entry->next;
         // prev->next = next;
@@ -159,12 +161,12 @@ namespace cuw3 {
         ops.set_next(chain_tail, node_next);
         ops.set_prev(node_next, chain_tail);
         
-        list_reset(chain);
+        list_reset(chain, ops);
     }
 
     template<class NodeRef, class ListOps>
     void list_insert_chain_before(NodeRef node, NodeRef chain, ListOps&& ops) {
-        list_insert_chain_before(list_prev(node), chain, ops);
+        list_insert_chain_after(list_prev(node, ops), chain, ops);
     }
 
     struct DefaultListEntry {
@@ -172,10 +174,10 @@ namespace cuw3 {
         DefaultListEntry* next{};
     };
 
-    // THINK : const correctness for get_next and get_prev? seems like it must never use const
     template<class Node>
     struct DefaultListOps {
-        Node* get_prev(Node* node) {
+        template<Qualified<Node> NodeT>
+        NodeT* get_prev(NodeT* node) {
             return node->prev;
         }
 
@@ -183,7 +185,8 @@ namespace cuw3 {
             node->prev = prev;
         }
 
-        Node* get_next(Node* node) {
+        template<Qualified<Node> NodeT>
+        NodeT* get_next(NodeT* node) {
             return node->next;
         }
 
@@ -191,11 +194,13 @@ namespace cuw3 {
             node->next = next;
         }
 
-        bool ref_equals(const Node* node1, const Node* node2) {
+        template<Qualified<Node> NodeT>
+        bool ref_equals(NodeT* node1, NodeT* node2) {
             return node1 == node2;
         }
 
-        bool self_equals(const Node* node) {
+        template<Qualified<Node> NodeT>
+        bool self_equals(NodeT* node) {
             return node->prev == node && node->next == node;
         }
     };

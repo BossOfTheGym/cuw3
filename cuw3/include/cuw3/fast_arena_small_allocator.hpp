@@ -3,9 +3,7 @@
 #include "conf.hpp"
 #include "list.hpp"
 #include "utils.hpp"
-#include "bitmap.hpp"
 #include "assert.hpp"
-#include "backoff.hpp"
 #include "fast_arena.hpp"
 #include "retire_reclaim.hpp"
 #include "region_chunk_handle.hpp"
@@ -302,7 +300,6 @@ namespace cuw3 {
             CUW3_CHECK_RETURN_VAL_NO_MSG(bins.can_allocate(size, alignment_id), nullptr);
             CUW3_CHECK_RETURN_VAL_NO_MSG(bins.valid_alignment_id(alignment_id), nullptr);
 
-            CUW3_CHECK(arena_view.alignment() >= alignment, "arena has invalid alignment");
             CUW3_CHECK(arena_view.type() == (uint64)RegionChunkType::FastArenaSmallAllocator, "arena has invalid type");
 
             void* allocated = arena_view.acquire(size);
@@ -327,7 +324,7 @@ namespace cuw3 {
                 return nullptr;
             }
 
-            // arena became resettable so we must to extract it, reset it and return 
+            // arena became resettable so we must extract it, reset it and return 
             auto alignment_id = bins.locate_alignment(arena_view.alignment());
             bins.extract(arena, alignment_id);
             arena_view.reset();

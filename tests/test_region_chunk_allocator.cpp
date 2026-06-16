@@ -208,10 +208,6 @@ struct TestRegionChunkAllocator {
         allocator.deallocate_chunk(allocation);
     }
 
-    void deallocate_chunk(RegionChunkMemory memory) {
-        allocator.deallocate_chunk(memory);
-    }
-
     uint32 get_num_regions() const {
         return specs.num_regions;
     }

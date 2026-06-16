@@ -306,42 +306,42 @@ void test_allocation_chaos(uint st, uint spam, uint cross) {
     }
 }
 
-TEST(TestCuw3, TestCuw3St) {
+TEST(Cuw3, St) {
     for (int i = 0; i < 1000; i++) {
         test_cuw3_st();
     }
 }
 
-TEST(TestCuw3, TestCuw3StMini) {
+TEST(Cuw3, StMini) {
     for (int i = 0; i < 1000; i++) {
         test_cuw3_st_mini();
     }
 }
 
-TEST(TestCuw3, TestCuw3MtSpam) {
+TEST(Cuw3, MtSpam) {
     for (int i = 0; i < 10; i++) {
         test_cuw3_mt_spam(128, 8, 64);
     }
 }
 
-TEST(TestCuw3, TestCuw3MtCross) {
+TEST(Cuw3, MtCross) {
     for (int i = 0; i < 16; i++) {
         test_cuw3_mt_cross(8, 10000, 128);
     }    
 }
 
-TEST(TestCuw3, TestCuw3Chaos_2_0_0) {
+TEST(Cuw3, Chaos_2_0_0) {
     test_allocation_chaos(2, 0, 0);
 }
 
-TEST(TestCuw3, TestCuw3Chaos_0_2_0) {
+TEST(Cuw3, Chaos_0_2_0) {
     test_allocation_chaos(0, 2, 0);
 }
 
-TEST(TestCuw3, TestCuw3Chaos_0_0_2) {
+TEST(Cuw3, Chaos_0_0_2) {
     test_allocation_chaos(0, 0, 2);
 }
 
-TEST(TestCuw3, TestCuw3Chaos_4_4_4) {
+TEST(Cuw3, Chaos_4_4_4) {
     test_allocation_chaos(4, 4, 4);
 }

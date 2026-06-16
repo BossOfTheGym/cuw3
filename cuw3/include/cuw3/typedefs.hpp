@@ -43,9 +43,13 @@ namespace cuw3 {
     template<class T>
     concept VoidLike = std::is_void_v<T>;
 
+
     template<class T>
     concept NonReferenceType = std::is_same_v<T, std::remove_reference_t<T>>;
 
     template<class T, NonReferenceType U>
     using SameConstAs = std::conditional_t<std::is_const_v<T>, const U, std::remove_cv_t<U>>;
+
+    template<class T, class U>
+    concept Qualified = std::is_same_v<std::remove_cv_t<T>, U>;
 }

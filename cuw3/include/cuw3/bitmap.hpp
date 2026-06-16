@@ -2,8 +2,8 @@
 
 #include <algorithm>
 
-#include "cuw3/assert.hpp"
 #include "funcs.hpp"
+#include "assert.hpp"
 #include "typedefs.hpp"
 
 namespace cuw3 {
@@ -148,7 +148,7 @@ namespace cuw3 {
             ssize curr = bit_capacity;
             ssize last = start;
             while (curr > last) {
-                ssize next = std::max<ssize>(align(curr - bin_size, bin_size), last);
+                ssize next = std::max<ssize>(align<ssize, ssize>(curr - bin_size, bin_size), last);
                 gsize mask = bitmask(next % bin_size, next % bin_size + curr - next);
                 gsize masked = bins[next / bin_size] & mask;
                 if (masked) {

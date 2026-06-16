@@ -4,7 +4,6 @@
 #include "cuw3/defs.hpp"
 #include "list.hpp"
 #include "utils.hpp"
-#include "bitmap.hpp"
 #include "assert.hpp"
 #include "backoff.hpp"
 #include "retire_reclaim.hpp"
@@ -31,9 +30,9 @@ namespace cuw3 {
             return cuw3_field_to_obj(list_entry, FastArena, list_entry);
         }
 
-        CUW3_NEW_CACHELINE // least volatile data)
-        RegionChunkHandleHeader region_chunk_header{};
-        RetireReclaimEntry retire_reclaim_entry{};
+        CUW3_NEW_CACHELINE // least volatile data
+        RegionChunkHandleHeader region_chunk_header{}; // does not change until arena dies
+        RetireReclaimEntry retire_reclaim_entry{}; // volatile but we assume that it wont be changed often
 
     #ifdef CUW3_ENABLE_DEBUG_CODE
         uint64 debug_label{};
@@ -225,9 +224,10 @@ namespace cuw3 {
         }
 
         [[nodiscard]] RetireReclaimPtr retire_allocation(void* memory, uint64 size) {
-            CUW3_POISON_MEMORY_REGION(memory, align(size, arena->arena_alignment));
+            uint64 size_aligned = align(size, arena->arena_alignment);
+            CUW3_POISON_MEMORY_REGION(memory, size_aligned);
 
-            CUW3_CHECK(has_memory_range(memory, size), "invalid memory range to retire");
+            CUW3_CHECK(has_memory_range(memory, size_aligned), "invalid memory range to retire");
 
             auto retire_reclaim_entry_view = RetireReclaimPtrView{&arena->retire_reclaim_entry.head};
             return retire_reclaim_entry_view.retire_data(size, FastArenaBackoff{});

@@ -85,14 +85,15 @@ namespace cuw3 {
     //
     // we need only one bit to store retired flag, default alignment is always greater than 2 => we can store this in any pointer
     // also we don't have to store pointer in the pointer field: it can be whatever data we need (amount of retired resource)
-    // also! we can use retired status to 'lock' some resource to transfer its ownership
-    // but we can also store 3 additional status bits within it
+    // also! we can use retired status to 'lock' some resource to transfer its ownership.
     //
     // when you reclaim some resource you must always reclaim subresource, reset its retired flag if it is not released
     // this is crucial because otherwise subresource would not be able to retire when it is required (it would think it is already retired)
     // if subresource cannot be properly reclaimed it must be postponed then
     using RetireReclaimRawPtr = uint64;
     
+    // Only 1 bit is reserved. Adding writable flags here is not free: see the SAFETY
+    // note on reclaim() - more retirer-writable flags breaks the exchange optimization.
     inline constexpr RetireReclaimRawPtr retire_reclaim_flag_bits = 1;
 
     using RetireReclaimPtr = AlignmentPackedPtr<RetireReclaimRawPtr, retire_reclaim_flag_bits>;
@@ -128,6 +129,17 @@ namespace cuw3 {
             return RetireReclaimPtr::packed_shifted(data, flags);
         }
 
+        // SAFETY: exchange-not-CAS is correct only because of two invariants:
+        //   1. single reclaimer (see top-of-file contract) - two reclaimers would each
+        //      exchange and one snatched list would be lost;
+        //   2. RetiredFlag is the only flag a retiring thread ever writes, and it is
+        //      already set here (asserted below). So the stale flags we read relaxed and
+        //      write back are always exactly RetiredFlag - nothing is clobbered.
+        // The retired list/count itself is never lost: exchange returns the truly-current
+        // value, so any retire landing before it is included in the result.
+        // If a retiring thread ever gains a second writable flag bit, this becomes a
+        // lost-update bug and must move to a CAS loop.
+        //
         // called by reclaiming thread
         // preserves already raised flags
         // retired flag must be set!
@@ -255,7 +267,7 @@ namespace cuw3 {
         }
 
         [[nodiscard]] static RetireReclaimEntryView create_view(Memory memory, RetireReclaimRawPtr initial_flags, uint32 type_label = 0, int32 base_offset = 0) {
-            return {create(memory, initial_flags, type_label)};
+            return {create(memory, initial_flags, type_label, base_offset)};
         }
 
         RetireReclaimEntry* entry{};

@@ -8,6 +8,7 @@
 #include "retire_reclaim.hpp"
 #include "thread_graveyard.hpp"
 #include "region_chunk_handle.hpp"
+#include "region_chunk_allocator.hpp"
 #include "fast_arena_small_allocator.hpp"
 #include "fast_arena_step_split_allocator.hpp"
 
@@ -21,8 +22,6 @@ namespace cuw3 {
     using ThreadGraveyardEntry = DefaultThreadGraveyardEntry;
     using ThreadGraveyardOps = DefaultThreadGraveyardOps;
 
-    // NOTEs : this little buddy gets little bit fused with allocator.hpp itself
-    // * probably it is a good idea just to move it into the allocator.hpp next to the main allocator data structure 
     // thread local allocator: core structure that holds context of all allocator types 
     // this type is not relocatable: its address must remain constant during lifetime
     struct alignas(region_owner_alignment) ThreadLocalAllocator {
@@ -40,6 +39,10 @@ namespace cuw3 {
             auto* small_allocator = FastArenaSmallAllocator::create(Memory::from(&tla->small_allocator), config.small_alloc_config);
             CUW3_CHECK_RETURN_VAL(small_allocator, nullptr, "failed to create small_allocator");
 
+            for (uint i = 0; i < conf_max_region_sizes; i++) {
+                tla->cached_chunks[i] = null_region_chunk_allocation;
+            }
+
             tla->thread_id = config.thread_id;
 
             return tla;
@@ -55,17 +58,17 @@ namespace cuw3 {
         }
 
         ThreadGraveyardEntry graveyard_entry{};
-        FastArenaStepSplitAllocator step_split_allocator{};
-        FastArenaSmallAllocator small_allocator{};
 
-        // NOTE : see allocator.hpp for details. do something with it later.
-        // this better be moved into the aux thread context
-        // all this fields are in cuw3.cpp
-        // kind of a workaround that will rest here for now
-        uint64 thread_id{}; // for debug purposes mostly
+        RegionChunkAllocation cached_chunks[conf_max_region_sizes] = {};
         uint64 total_chunk_storage_size{};
         uint64 last_chunk_pool_split_id[conf_max_region_sizes] = {};
         uint64 last_graveyard_id{};
-        uint64 extended_free_counter{};
+        uint64 this_cleanup_counter{};
+        uint64 grave_cleanup_counter{};
+        
+        uint64 thread_id{}; // for debug purposes mostly
+
+        FastArenaStepSplitAllocator step_split_allocator{};
+        FastArenaSmallAllocator small_allocator{};
     };
 }

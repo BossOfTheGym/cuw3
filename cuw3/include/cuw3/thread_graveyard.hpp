@@ -6,6 +6,7 @@
 #include "atomic.hpp"
 #include "backoff.hpp"
 
+#define CUW3_SIMPLIFY_GRAVEYARD
 
 namespace cuw3 {
     // grave consists of slots and common retire list
@@ -154,6 +155,7 @@ namespace cuw3 {
         }
     };
 
+    // TODO : this is a macro hell, split into two implementations
     // will use simplified grave inspection algorithm
     struct ThreadGraveyard {
         [[nodiscard]] static ThreadGraveyard* create(Memory memory, uint num_grave_entries) {
@@ -162,11 +164,14 @@ namespace cuw3 {
             CUW3_CHECK_RETURN_VAL(num_grave_entries <= conf_graveyard_slot_count, nullptr, "too big amount of graves");
 
             auto* graveyard = new (memory.get()) ThreadGraveyard{};
+        #ifndef CUW3_SIMPLIFY_GRAVEYARD
             graveyard->num_grave_entries = num_grave_entries;
+        #endif
             return graveyard;
         }
 
 
+    #ifndef CUW3_SIMPLIFY_GRAVEYARD
         [[nodiscard]] ThreadGraveData acquire_(ThreadGraveAcquireParams params) {
             ThreadGraveyardBackoff backoff{};
             for (uint round = 0; round < params.rounds; round++) {
@@ -218,7 +223,7 @@ namespace cuw3 {
             }
             return curr;
         }
-
+        
         template<class NodeOps>
         [[nodiscard]] ThreadGraveData acquire_distribute_(NodeOps&& node_ops) {
             ThreadGraveDeadQueue grave_list{&dead_queue};
@@ -231,10 +236,10 @@ namespace cuw3 {
             void* distributed = node_ops.get_next(snatched);
             void* remaining = distribute_(node_ops, distributed, 2);
             grave_list.push(remaining, ThreadGraveyardBackoff{}, node_ops);
-
+            
             return {snatched, num_grave_entries};
         }
-
+        
         bool put_thread_(void* thread, ThreadGraveAcquireParams params) {
             for (uint round = 0; round < params.rounds; round++) {
                 for (
@@ -250,6 +255,21 @@ namespace cuw3 {
             }
             return false;
         }
+    #else
+        template<class NodeOps>
+        [[nodiscard]] ThreadGraveData acquire_distribute_(NodeOps&& node_ops) {
+            ThreadGraveDeadQueue grave_list{&dead_queue};
+            
+            void* snatched = grave_list.snatch();
+            if (!snatched) {
+                return {};
+            }
+            
+            void* remaining = node_ops.get_next(snatched);
+            grave_list.push(remaining, ThreadGraveyardBackoff{}, node_ops);
+            return {snatched};
+        }
+    #endif
 
         template<class NodeOps>
         void enqueue_thread_(void* thread, NodeOps&& node_ops) {
@@ -264,60 +284,82 @@ namespace cuw3 {
         // acquire retired thread
         template<class NodeOps>
         [[nodiscard]] ThreadGraveData acquire(NodeOps&& node_ops, ThreadGraveAcquireParams params) {
+        #ifndef CUW3_SIMPLIFY_GRAVEYARD
             if (auto acquired = acquire_(params)) {
                 return acquired;
             }
+        #endif
             return acquire_distribute_(node_ops);
         }
 
         // thread is no longer needed here
         void empty_grave(ThreadGraveData grave_data) {
+        #ifndef CUW3_SIMPLIFY_GRAVEYARD
             CUW3_CHECK(grave_data.grave <= num_grave_entries, "invalid grave num");
-
             if (grave_data.grave < num_grave_entries) {
                 empty_grave_(grave_data);
             }
+        #endif
         }
 
         // thread was in grave and we want to put it back
         template<class NodeOps>
         void release_thread(ThreadGraveData grave_data, NodeOps&& node_ops) {
+        #ifndef CUW3_SIMPLIFY_GRAVEYARD
             CUW3_CHECK(grave_data.grave <= num_grave_entries, "invalid grave num provided");
-
             if (grave_data.grave < num_grave_entries) {
                 release_(grave_data);
             }
             if (grave_data.grave == num_grave_entries) {
                 put_thread(grave_data.data, node_ops);
             }
+        #else
+            put_thread(grave_data.data, node_ops);
+        #endif
         }
 
         // thread is dead, was never dead before, so we want to put it into the grave
         template<class NodeOps>
         void put_thread(void* thread, NodeOps&& node_ops) {
+        #ifndef CUW3_SIMPLIFY_GRAVEYARD
             if (put_thread_(thread, {})) {
                 return;
             }
+        #endif
             enqueue_thread_(thread, node_ops);
         }
 
-            // for testing purposes only
+        // for testing purposes only
         bool is_empty() {
+        #ifndef CUW3_SIMPLIFY_GRAVEYARD
             for (uint i = 0; i < num_grave_entries; i++) {
                 if (!ThreadGraveEntryView{&grave_entries[i]}.is_empty()) {
                     return false;
                 }
             }
+        #endif
             return !std::atomic_ref{dead_queue}.load(std::memory_order_relaxed);
         }
 
 
+        uint get_num_grave_entries() const {
+        #ifndef CUW3_SIMPLIFY_GRAVEYARD
+            return num_grave_entries;
+        #else
+            return 0;
+        #endif
+        }
+
+    #ifndef CUW3_SIMPLIFY_GRAVEYARD
         ThreadGraveEntry grave_entries[conf_graveyard_slot_count] = {}; // atomic
+    #endif
 
         struct alignas(conf_cacheline) {
             void* dead_queue{}; // atomic
         };
         
+    #ifndef CUW3_SIMPLIFY_GRAVEYARD
         uint num_grave_entries{}; // readonly
+    #endif
     };
 }

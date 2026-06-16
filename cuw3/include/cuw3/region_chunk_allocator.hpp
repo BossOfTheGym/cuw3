@@ -74,7 +74,7 @@ namespace cuw3 {
             return region_offset + region_size;
         }
 
-        uint64 get_relchunk(uint32 chunk) const {
+        uint64 get_relchunk(uint64 chunk) const {
             return region_offset + mulpow2(chunk, chunk_size_log2);
         }
 
@@ -423,7 +423,7 @@ namespace cuw3 {
         }
 
         uint32 region{};
-        uint32 chunk{}; // dementia comment: seems like it is chunk index within the region
+        uint32 chunk{}; // dementia comment: it is in-region chunk index
         uint32 handle{}; // absolute handle index
         uint32 split{};
     };
@@ -442,7 +442,9 @@ namespace cuw3 {
         }
 
         void* chunk{};
+        uint64 chunk_size{};
         void* handle{};
+        uint64 handle_size{};
     };
 
     struct RegionAllocatorConfig {
@@ -513,7 +515,7 @@ namespace cuw3 {
             auto& region_specs = specs->region_specs[region];
             void* chunk_memory = region_specs.get_chunk(regions, chunk);
             void* handle_memory = region_specs.get_handle(handles, handle);
-            return {chunk_memory, handle_memory};
+            return {chunk_memory, region_specs.get_chunk_size(), handle_memory, specs->handle_size};
         }
 
         [[nodiscard]] RegionChunkAllocation allocate_chunk_(uint32 region, RegionChunkAllocParams alloc_params) {
@@ -592,11 +594,15 @@ namespace cuw3 {
             return specs->get_handle(handles, handle_id);
         }
 
+        [[nodiscard]] uint32 search_suitable_region(uint64 size) {
+            return specs->search_suitable_region(size);
+        }
+
         [[nodiscard]] RegionChunkMemory region_data_to_memory_no_check(uint32 region, uint32 chunk, uint32 handle) {
             auto& region_specs = specs->region_specs[region];
             void* chunk_mem = region_specs.get_chunk(regions, chunk);
             void* handle_mem = specs->get_handle(handles, handle);
-            return {chunk_mem, handle_mem};
+            return {chunk_mem, region_specs.get_chunk_size(), handle_mem, specs->handle_size};
         }
 
         [[nodiscard]] RegionChunkMemory region_data_to_memory(uint32 region, uint32 chunk, uint32 handle) {
@@ -611,8 +617,8 @@ namespace cuw3 {
             return region_data_to_memory_no_check(region, chunk, handle);
         }
 
-        [[nodiscard]] uint32 search_suitable_region(uint64 size) {
-            return specs->search_suitable_region(size);
+        [[nodiscard]] RegionChunkMemory chunk_allocation_to_memory(RegionChunkAllocation chunk_allocation) {
+            return region_data_to_memory(chunk_allocation.region, chunk_allocation.chunk, chunk_allocation.handle);
         }
 
         [[nodiscard]] RegionChunkLocation ptr_to_location(void* ptr) {
@@ -639,6 +645,10 @@ namespace cuw3 {
                 return {region_chunk_allocator_null_value};
             }
 
+            // `rounds` counts genuine emptiness (null), not contention (failed): a `failed`
+            // result retries without consuming a round, since a chunk may reappear once
+            // contention clears. Termination relies on op_failed being transient; backoff()
+            // throttles. Don't decrement on failed - it would fake an OOM under contention.
             RegionChunkAllocatorBackoff backoff{};
             for (int rounds = alloc_params.rounds; rounds != 0; ) {
                 auto allocation = allocate_chunk_(region, alloc_params);
@@ -666,13 +676,10 @@ namespace cuw3 {
             pools->deallocate(location.handle, location.region, location.split, RegionAllocatorPoolHandleOps{this});
         }
 
-        void deallocate_chunk(RegionChunkMemory memory) {
-            if (!memory) {
-                return;
-            }
-            if (auto allocation = ptr_to_allocation(memory.chunk)) {
-                deallocate_chunk(allocation);
-            }
+        void deallocate_chunk(void* chunk) {
+            auto allocation = ptr_to_allocation(chunk);
+            CUW3_CHECK(allocation, "invalid chunk");
+            deallocate_chunk(allocation);
         }
 
         // NOTE : if I wanted to implement deallocate_chunk_chain function I can remember that

@@ -5,7 +5,6 @@
 #include "utils.hpp"
 #include "bitmap.hpp"
 #include "assert.hpp"
-#include "backoff.hpp"
 #include "fast_arena.hpp"
 #include "retire_reclaim.hpp"
 #include "region_chunk_handle.hpp"
@@ -288,6 +287,11 @@ namespace cuw3 {
                 return get_step_split_info(size, false).step_split_id;
             }
 
+
+            // NOTES on _clamped functions
+            // Asymmetric clamp behavior — locate_step_split_size_clamped clamps
+            // a too-small index up to min_step_split_id, but locate_step_split_arena_clamped sends it to bin 0 (the recycle bin).
+            // This is intentional (bin 0 = "too small to allocate from for this alignment," excluded from any_set(min_step_split_id) scans).
             uint64 locate_step_split_size_clamped(uint64 alignment_id, uint64 size) const {
                 CUW3_CHECK(check_alignment_id(alignment_id), "invalid alignment");
 

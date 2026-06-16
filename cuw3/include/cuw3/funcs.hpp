@@ -8,11 +8,17 @@
 #include <functional>
 #include <type_traits>
 
-#include "cuw3/typedefs.hpp"
 #include "defs.hpp"
 #include "assert.hpp"
+#include "typedefs.hpp"
 
 namespace cuw3 {
+    template<Integer T>
+    constexpr T bitsize() {
+        return sizeof(T) * (T)8;
+    }
+    
+
     template<Integer T>
     constexpr auto as_unsigned(T value) {
         return (std::make_unsigned_t<T>)value;
@@ -33,6 +39,7 @@ namespace cuw3 {
 
     template<Integer T>
     constexpr T intpow2(T value) {
+        CUW3_ASSERT(value < bitsize<T>(), "too big value");
         return (T)1 << value;
     }
 
@@ -46,7 +53,7 @@ namespace cuw3 {
 
     template<Integer T>
     constexpr T pow2log2(T value) {
-        return (T)std::countr_zero(as_unsigned(value));
+        return intlog2(value);
     }
 
     template<Integer T, Integer U>
@@ -61,7 +68,7 @@ namespace cuw3 {
 
     template<Integer T, Integer U>
     constexpr auto modpow2(T a, U b_log2) {
-        return a & ~(~(U)0 >> b_log2);
+        return a & ~(~(U)0 << b_log2);
     }
 
     template<Integer T>
@@ -89,13 +96,13 @@ namespace cuw3 {
     template<Integer T, Integer U>
     constexpr auto align(T value, U alignment) {
         CUW3_ASSERT(is_alignment(alignment), "not alignment");
-        return (value + alignment - 1) & -alignment;
+        return (value + alignment - 1) & ~(alignment - 1);
     }
 
     template<Integer T, Integer U>
     constexpr auto align_down(T value, U alignment) {
         CUW3_ASSERT(is_alignment(alignment), "not alignment");
-        return value & -alignment;
+        return value & ~(alignment - 1);
     }
 
     template<class T, Integer U>
@@ -105,11 +112,7 @@ namespace cuw3 {
     }
 
 
-    template<Integer T>
-    constexpr T bitsize() {
-        return sizeof(T) * (T)8;
-    }
-
+    // produces bitmask where all bits from the range [first_bit, last_bit) are set
     template<UnsignedInteger T>
     constexpr T bitmask(T first_bit, T last_bit) {
         CUW3_ASSERT(first_bit < last_bit, "last_bit is less than first_bit");
@@ -157,6 +160,9 @@ namespace cuw3 {
     }
 
 
+    // chunk utilities, we assume that chunk size is greater than 1
+    // if chunk is pow2 then b_log2 != 0 then we can use faster bit operation
+    // if chunk is not pow2 then we have to do honest mul/div
     template<Integer T, Integer U>
     constexpr auto mulchunk(T a, U b, U b_log2 = (U)0) -> decltype(a * b) {
         if (b_log2) {
@@ -229,6 +235,8 @@ namespace cuw3 {
     #define cuw3_field_to_obj(field_ptr, Object, field_name) field_to_obj<Object>((field_ptr), (ptrdiff)offsetof(Object, field_name))
 
 
+    inline constexpr usize max_size_log2 = 40;
+
     template<class T, usize Size>
     constexpr usize array_size(const T (&array)[Size]) {
         return Size;
@@ -246,7 +254,7 @@ namespace cuw3 {
 
     template<Integer T, usize Size>
     constexpr bool all_sizes_valid(const T (&array)[Size]) {
-        return std::all_of(std::begin(array), std::end(array), [] (auto& size) { return size <= 40; });
+        return std::all_of(std::begin(array), std::end(array), [] (auto& size) { return size <= max_size_log2; });
     }
 
     template<class It>

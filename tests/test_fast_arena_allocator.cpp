@@ -1107,38 +1107,38 @@ namespace fast_arena_allocator_tests {
 }
 
 
-TEST(TestFastArena, TestArenaFullExaustion) {
+TEST(FastArena, FullExaustion) {
     fast_arena_tests::test_arena_full_exaustion(64, 1 << 16);
 }
 
-TEST(TestaFastArena, TestArenaPartialExaustion1) {
+TEST(FastArena, PartialExaustion1) {
     fast_arena_tests::test_arena_partial_exaustion1(64);
 }
 
-TEST(TestFastArena, TestArenaPartialExaustion2) {
+TEST(FastArena, PartialExaustion2) {
     fast_arena_tests::test_arena_partial_exaustion2(64);
 }
 
-TEST(TestFastArena, TestFastArenaBinsLocation) {
+TEST(FastArena, BinsLocation) {
     fast_arena_allocator_tests::test_fast_arena_bins_location();
 }
 
-TEST(TestFastArena, TestFastArenaAllocatorSt) {
+TEST(FastArena, AllocatorSt) {
     fast_arena_allocator_tests::test_fast_arena_allocator_st(1 << 20, 1 << 8, 1 << 6, 1 << 16);
 }
 
-TEST(TestFastArena, TestFastArenaAllocatorStMaxAlloc) {
+TEST(FastArena, AllocatorStMaxAlloc) {
     fast_arena_allocator_tests::test_fast_arena_allocator_st_max_alloc(1 << 20, 1 << 8, 1 << 6, 1 << 16);
 }
 
-TEST(TestFastArena, TestFastArenaAllocatorRetireReclaim) {
+TEST(FastArena, AllocatorRetireReclaim) {
     fast_arena_allocator_tests::test_fast_arena_allocator_retire_reclaim(1 << 18, 1 << 12, 8, 1 << 17);
 }
 
-TEST(TestFastArena, TestFastArenaAllocatorRetireReclaimHighContention) {
+TEST(FastArena, AllocatorRetireReclaimHighContention) {
     fast_arena_allocator_tests::test_fast_arena_allocator_retire_reclaim_high_contention(1 << 10);
 }
 
-TEST(TestFastArena, TestFastArenaSmallAllocator) {
+TEST(FastArena, SmallAllocator) {
     fast_arena_allocator_tests::test_fast_arena_small_allocator(16);
 }

@@ -189,14 +189,14 @@ void execute_benchmark(benchmark::State& state, const Allocator& alloc, const Re
 void cuw3_bench_small_alloc_dealloc(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16, 16384, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16, 16384, 16, 1 << 18);
     execute_benchmark(state, Cuw3Allocator{}, executor, context, reqs, "bench_small_alloc_dealloc");
 }
 
 void cuw3_bench_small_alloc_dealloc_chaos(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16, 16384, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16, 16384, 16, 1 << 18);
     execute_benchmark(state, Cuw3Allocator{}, executor, context, reqs, "bench_small_alloc_dealloc_chaos");
 }
 
@@ -207,14 +207,14 @@ void cuw3_bench_small_alloc_dealloc_chaos_mt(benchmark::State& state) {
 void cuw3_bench_medium_alloc_dealloc(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16384, 1 << 18, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16384, 1 << 18, 16, 1 << 15);
     execute_benchmark(state, Cuw3Allocator{}, executor, context, reqs, "bench_medium_alloc_dealloc");
 }
 
 void cuw3_bench_medium_alloc_dealloc_chaos(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16384, 1 << 18, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16384, 1 << 18, 16, 1 << 15);
     execute_benchmark(state, Cuw3Allocator{}, executor, context, reqs, "bench_medium_alloc_dealloc_chaos");
 }
 
@@ -225,14 +225,14 @@ void cuw3_bench_medium_alloc_dealloc_chaos_mt(benchmark::State& state) {
 void cuw3_bench_mixed_alloc_dealloc(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16, 1 << 18, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16, 1 << 18, 16, 1 << 15);
     execute_benchmark(state, Cuw3Allocator{}, executor, context, reqs, "bench_mixed_alloc_dealloc");
 }
 
 void cuw3_bench_mixed_alloc_dealloc_chaos(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16, 1 << 18, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16, 1 << 18, 16, 1 << 15);
     execute_benchmark(state, Cuw3Allocator{}, executor, context, reqs, "bench_mixed_alloc_dealloc_chaos");
 }
 
@@ -245,14 +245,14 @@ void cuw3_bench_mixed_alloc_dealloc_chaos_mt(benchmark::State& state) {
 void std_bench_small_alloc_dealloc(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16, 16384, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16, 16384, 16, 1 << 18);
     execute_benchmark(state, StdAllocator{}, executor, context, reqs, "bench_small_alloc_dealloc");
 }
 
 void std_bench_small_alloc_dealloc_chaos(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16, 16384, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16, 16384, 16, 1 << 18);
     execute_benchmark(state, StdAllocator{}, executor, context, reqs, "bench_small_alloc_dealloc_chaos");
 }
 
@@ -263,14 +263,14 @@ void std_bench_small_alloc_dealloc_chaos_mt(benchmark::State& state) {
 void std_bench_medium_alloc_dealloc(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16384, 1 << 18, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16384, 1 << 18, 16, 1 << 15);
     execute_benchmark(state, StdAllocator{}, executor, context, reqs, "bench_medium_alloc_dealloc");
 }
 
 void std_bench_medium_alloc_dealloc_chaos(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16384, 1 << 18, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16384, 1 << 18, 16, 1 << 15);
     execute_benchmark(state, StdAllocator{}, executor, context, reqs, "bench_medium_alloc_dealloc_chaos");
 }
 
@@ -281,14 +281,14 @@ void std_bench_medium_alloc_dealloc_chaos_mt(benchmark::State& state) {
 void std_bench_mixed_alloc_dealloc(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16, 1 << 18, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc(42 + state.thread_index(), 16, 1 << 18, 16, 1 << 15);
     execute_benchmark(state, StdAllocator{}, executor, context, reqs, "bench_mixed_alloc_dealloc");
 }
 
 void std_bench_mixed_alloc_dealloc_chaos(benchmark::State& state) {
     RequestExecutor executor{};
     RequestContext context{};
-    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16, 1 << 18, 16, 1 << 14);
+    RequestList reqs = create_req_list_alloc_dealloc_chaos(42 + state.thread_index(), 16, 1 << 18, 16, 1 << 15);
     execute_benchmark(state, StdAllocator{}, executor, context, reqs, "bench_mixed_alloc_dealloc_chaos");
 }
 
@@ -313,8 +313,8 @@ BENCHMARK(std_bench_medium_alloc_dealloc);
 BENCHMARK(cuw3_bench_medium_alloc_dealloc_chaos);
 BENCHMARK(std_bench_medium_alloc_dealloc_chaos);
 
-BENCHMARK(cuw3_bench_medium_alloc_dealloc_chaos_mt)->Threads(8);
-BENCHMARK(std_bench_medium_alloc_dealloc_chaos_mt)->Threads(8);
+BENCHMARK(cuw3_bench_medium_alloc_dealloc_chaos_mt)->Threads(12);
+BENCHMARK(std_bench_medium_alloc_dealloc_chaos_mt)->Threads(12);
 
 
 BENCHMARK(cuw3_bench_mixed_alloc_dealloc);
@@ -323,8 +323,9 @@ BENCHMARK(std_bench_mixed_alloc_dealloc);
 BENCHMARK(cuw3_bench_mixed_alloc_dealloc_chaos);
 BENCHMARK(std_bench_mixed_alloc_dealloc_chaos);
 
-BENCHMARK(cuw3_bench_mixed_alloc_dealloc_chaos_mt)->Threads(8);
-BENCHMARK(std_bench_mixed_alloc_dealloc_chaos_mt)->Threads(8);
+BENCHMARK(cuw3_bench_mixed_alloc_dealloc_chaos_mt)->Threads(12);
+BENCHMARK(std_bench_mixed_alloc_dealloc_chaos_mt)->Threads(12);
+
 
 
 BENCHMARK_MAIN();

@@ -40,7 +40,7 @@ namespace cuw3 {
     inline constexpr gsize conf_num_regions = conf_max_region_sizes;
 
     inline constexpr uint64 conf_region_sizes_log2[] = {CUW3_REGION_SIZES_LOG2};
-    static_assert(all_sizes_valid(conf_region_sizes_log2), "all region sizes must be less than 40");
+    static_assert(all_sizes_valid(conf_region_sizes_log2));
 
     inline constexpr usize conf_num_region_sizes = array_size(conf_region_sizes_log2);
     static_assert(conf_num_region_sizes <= conf_max_region_sizes);
@@ -61,7 +61,7 @@ namespace cuw3 {
     inline constexpr usize conf_max_region_chunk_size = intpow2(conf_max_region_chunk_size_log2);
 
     static_assert(array_unique_ascending(conf_region_chunk_sizes_log2), "sizes must be listed in ascending order");
-    static_assert(all_sizes_valid(conf_region_chunk_sizes_log2), "all chunk sizes must be less than 40");
+    static_assert(all_sizes_valid(conf_region_chunk_sizes_log2));
     static_assert(conf_num_region_chunk_sizes <= conf_num_region_sizes);
 
     using RegionChunkSizeArray = std::array<uint64, conf_num_region_chunk_sizes>;
@@ -69,7 +69,11 @@ namespace cuw3 {
     inline constexpr RegionChunkSizeArray conf_region_chunk_sizes_array = {CUW3_REGION_CHUNK_SIZES_LOG2};
     static_assert(conf_num_region_sizes == conf_num_region_chunk_sizes, "num of regions and num of chunks must be equal.");
 
+    inline constexpr usize conf_max_cached_chunk_size_id = CUW3_MAX_CACHED_CHUNK_SIZE_ID;
+    static_assert(conf_max_cached_chunk_size_id < conf_num_region_chunk_sizes);
+    inline constexpr usize conf_max_cached_chunk_size = intpow2(conf_region_chunk_sizes_array[conf_max_cached_chunk_size_id]); 
 
+    
     // region pool params
     inline constexpr usize conf_max_contention_split = CUW3_MAX_CONTENTION_SPLIT;
     static_assert(conf_max_contention_split <= 64 && conf_max_contention_split > 0, "contention split value must be greater than zero.");
