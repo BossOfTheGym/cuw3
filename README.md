@@ -85,7 +85,7 @@ Just a container for all of the aforementioned allocators: the fast arena small 
 
 ## Benchmarks
 
-I did not test the allocator that extensively against other allocators. The standard allocator was chosen as a reference. cuw3 works almost 2x faster (Linux, Manjaro, Clang) in the single-threaded case. It may suffer in the multi-threaded case when the amount (both space and count) of allocations is small.
+Now it has some potential. Basic chunk caching make it outperform std allocator. Warning: there was no cross-thread deallocation tests.
 
 ## Conclusion
 
@@ -94,3 +94,7 @@ The most simple and clean approach would be to use just the small arena allocato
 ## TODOs & Notes
 
 - **Allocator / Thread-Local Allocator / cuw3 code must be reorganised.** At least this code. It must be rewritten in a more procedural style. The TLA depends on the region chunk allocator and the thread graveyard — components of the global context. Most of the functions from `allocator.hpp` are, in fact, functions of the TLA.
+
+- **Chunk caching** Better chunk caching would be great. Now it stupidly caches one chunk of each size at max. By default it leads up to 2 + 4 + 8 + 16 + 32 + 64 = 126 Mib of cached memory. Pretty much per thread. Chunk caching can be made at least shared: bigger chance to reuse memory rather then pile it up somewhere without any use.
+
+Hope it will be useful to anybody some day. That's it folks!

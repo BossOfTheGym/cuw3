@@ -1,3 +1,0 @@
-* cache by volume not by category
-* postpone vmem_decommit
-* perf analyze cuw3, add proper benchmarks if needed

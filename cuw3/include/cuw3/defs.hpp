@@ -23,7 +23,7 @@
 #define CUW3_REGION_CHUNK_SIZES_LOG2 21,22,23,24,25,26
 
 // simplified check, if chunk size is less than or equal to this value then we can cache it
-#define CUW3_MAX_CACHED_CHUNK_SIZE_ID 2
+#define CUW3_MAX_CACHED_CHUNK_SIZE_ID 5
 
 #define CUW3_REGION_CHUNK_POOL_CONTENTION_SPLIT 2
 
