@@ -67,6 +67,8 @@ The fast arena is fast because it stores nothing. It just increases the freed co
 
 An arena-based allocator. It was named this way because initially it was intended for small-size allocations only. But the data structure itself allows you to allocate practically any size that can fit into the arena. Categorises arenas by alignment: there are several lists, and an arena from such a list can allocate memory using only one specified alignment. Works pretty fast. All free arenas of the same category are contained in the same list.
 
+A fast arena gives you the ability to allocate one big range and deallocate parts of it. However, this must be explicitly supported, so the current implementation must be checked. Alignment must also be considered.
+
 ## Fast Arena Step-Split Allocator
 
 Kind of similar to the fast arena small allocator, but arenas are additionally categorised by the size remaining. The size space is split into steps. Each next step is twice as large as the previous one. Each step is split into 'split' parts. So, firstly, the allocator locates what step the arena belongs to and then locates the step. A more detailed description can be found in `fast_arena_step_split_allocator.hpp`.
