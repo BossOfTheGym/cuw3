@@ -82,6 +82,8 @@ if(CUW3_BUILD_TESTS)
         EXCLUDE_FROM_ALL
     )
     
+    FetchContent_MakeAvailable(googletest)
+
     include(GoogleTest)
     enable_testing()
     add_subdirectory(tests)
