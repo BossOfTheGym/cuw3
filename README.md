@@ -87,7 +87,28 @@ Just a container for all of the aforementioned allocators: the fast arena small 
 
 ## Benchmarks
 
-Now it has some potential. Basic chunk caching make it outperform std allocator. Warning: there was no cross-thread deallocation tests.
+Now it has some potential. Basic chunk caching make it outperform std allocator. Warning: there was no cross-thread deallocation tests. Not very extensive and representative but still shows something
+
+| Benchmark                                            |        Time  |          CPU    | Iterations   |
+| :--- | ---: | ---: | ---: |
+| cuw3_bench_small_alloc_dealloc                       |   9327097 ns |      9280863 ns |           73 |
+| std_bench_small_alloc_dealloc                        | 282690807 ns |    281400919 ns |            2 |
+| cuw3_bench_small_alloc_dealloc_chaos                 |  11750904 ns |     11705466 ns |           59 |
+| std_bench_small_alloc_dealloc_chaos                  |  19896884 ns |     19807308 ns |           35 |
+| cuw3_bench_small_alloc_dealloc_chaos_mt/threads:12   |  12790278 ns |     12667175 ns |           48 |
+| std_bench_small_alloc_dealloc_chaos_mt/threads:12    |  25953223 ns |     25605442 ns |           24 |
+| cuw3_bench_medium_alloc_dealloc                      |   1530520 ns |      1518151 ns |          458 |
+| std_bench_medium_alloc_dealloc                       |  36245373 ns |     35928635 ns |           17 |
+| cuw3_bench_medium_alloc_dealloc_chaos                |   1483945 ns |      1475516 ns |          475 |
+| std_bench_medium_alloc_dealloc_chaos                 |   9504128 ns |      9457679 ns |           78 |
+| cuw3_bench_medium_alloc_dealloc_chaos_mt/threads:12  |   1850937 ns |      1805771 ns |          372 |
+| std_bench_medium_alloc_dealloc_chaos_mt/threads:12   |  16388939 ns |     16086067 ns |           36 |
+| cuw3_bench_mixed_alloc_dealloc                       |   1404865 ns |      1393800 ns |          502 |
+| std_bench_mixed_alloc_dealloc                        |  34277612 ns |     33983075 ns |           20 |
+| cuw3_bench_mixed_alloc_dealloc_chaos                 |   1612578 ns |      1603494 ns |          437 |
+| std_bench_mixed_alloc_dealloc_chaos                  |   7726553 ns |      7696529 ns |           90 |
+| cuw3_bench_mixed_alloc_dealloc_chaos_mt/threads:12   |   4225236 ns |      3784890 ns |          168 |
+| std_bench_mixed_alloc_dealloc_chaos_mt/threads:12    |   9064713 ns |      8872010 ns |           60 |
 
 ## Conclusion
 
